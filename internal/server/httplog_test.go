@@ -18,6 +18,7 @@ func TestLogsEndpoint(t *testing.T) {
 	if err := applog.Init(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(applog.Close)
 	applog.Info("probe_log", "ok", true)
 
 	h := Handler(nil, Options{})

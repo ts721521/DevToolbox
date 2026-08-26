@@ -17,7 +17,11 @@ const (
 	maxBytes = 2 << 20 // 2MB
 )
 
-var logger *slog.Logger
+var (
+	logger *slog.Logger
+	sink   *rotating
+	mu     sync.Mutex
+)
 
 func Dir() (string, error) {
 	root, err := registry.RootDir()
@@ -37,6 +41,7 @@ func Path() (string, error) {
 }
 
 func Init() error {
+	Close()
 	p, err := Path()
 	if err != nil {
 		logger = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -49,10 +54,24 @@ func Init() error {
 		slog.SetDefault(logger)
 		return err
 	}
+	mu.Lock()
+	sink = f
+	mu.Unlock()
 	w := io.MultiWriter(os.Stderr, f)
 	logger = slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 	return nil
+}
+
+// Close releases the log file. Tests on Windows must call this before TempDir cleanup.
+func Close() {
+	mu.Lock()
+	r := sink
+	sink = nil
+	mu.Unlock()
+	if r != nil {
+		_ = r.Close()
+	}
 }
 
 func Info(msg string, args ...any) {
@@ -157,4 +176,15 @@ func (r *rotating) Write(p []byte) (int, error) {
 		return 0, fmt.Errorf("log file closed")
 	}
 	return r.f.Write(p)
+}
+
+func (r *rotating) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.f == nil {
+		return nil
+	}
+	err := r.f.Close()
+	r.f = nil
+	return err
 }
