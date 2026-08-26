@@ -4,7 +4,8 @@
 
 ## [未发布]
 
-## [1.1.0] - 2026-08-26
+### 变更
+- PR 合入 `main` 由 GitHub ruleset 强制走 PR + 汇总检查 `CI`；用户同意后任意 AI 用 `gh pr merge --auto` 合并
 
 ### 新增
 - 产品名改为 **工坞 / ToolDock**（Mac 安装到 `/Applications/工坞.app`，CLI `tooldock`，兼容 `devtoolbox`）

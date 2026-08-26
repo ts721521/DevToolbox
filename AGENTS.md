@@ -100,6 +100,7 @@ go build -o devtoolbox .
 - Commit：Conventional Commits（subject 可用中文）
 - 发版：`./scripts/publish.sh vX.Y.Z`（详见 docs/RELEASE.md）
 - 用户可见变化必须改 `CHANGELOG.md`
+- **合并**：用户明确同意后，任何 AI 用 `gh pr merge --squash|--rebase --auto` 合入（见 docs/COLLABORATION.md）。禁止 push `main`。
 
 ## 黄金法则
 

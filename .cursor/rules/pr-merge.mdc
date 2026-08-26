@@ -1,0 +1,11 @@
+---
+description: After explicit user consent, any AI must merge the open PR via gh; never push to main.
+alwaysApply: true
+---
+
+# PR 合并（用户同意后自动化）
+
+- 禁止 `git push` 到 `main`。合入只走 GitHub PR。
+- 用户明确同意后（「合并」「同意合并」「merge」「可以合」等），**任何 AI 都必须执行合并**，不要让用户去 GitHub 点按钮。
+- 做法：`gh pr merge --squash --auto`（单 commit）或 `gh pr merge --rebase --auto`（多 commit）。CI 已绿会立刻合；未绿则等 GitHub auto-merge。
+- 禁止 `--merge`（merge commit）。未获同意禁止 merge / `--auto`。
