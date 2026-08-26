@@ -1,11 +1,11 @@
-# 开发工具箱 (DevToolbox)
+# 工坞 (ToolDock)
 
 [![CI](https://github.com/ts721521/DevToolbox/actions/workflows/ci.yml/badge.svg)](https://github.com/ts721521/DevToolbox/actions/workflows/ci.yml)
 [![Release](https://github.com/ts721521/DevToolbox/actions/workflows/release.yml/badge.svg)](https://github.com/ts721521/DevToolbox/actions/workflows/release.yml)
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go)](https://go.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-跨平台本地开发工具启动器（**macOS + Windows**）。一个桌面入口管理你写的各种工具；新项目写一份 `.devtoolbox.json` 即可注册。界面显示每个工具支援的系统，并可一键关闭后台进程。
+跨平台本地开发工具启动器（**macOS + Windows**）。产品名 **工坞**，英文 **ToolDock**。所有开发工具停靠在一个入口；新项目写一份 `.devtoolbox.json` 即可注册。
 
 ## 文档导航
 
@@ -40,6 +40,8 @@ xattr -d com.apple.quarantine devtoolbox-darwin-arm64-v1.0.0
 chmod +x devtoolbox-darwin-arm64-v1.0.0
 ./devtoolbox-darwin-arm64-v1.0.0 install-cli
 ./devtoolbox-darwin-arm64-v1.0.0 install-desktop
+# 正式安装位置：/Applications/工坞.app ，桌面为快捷方式
+
 ```
 
 已装 `gh` 时：
@@ -71,6 +73,7 @@ devtoolbox register --file .devtoolbox.json
 模板见 [`examples/`](./examples/)。完整协议见 [AGENTS.md](./AGENTS.md)。
 
 关闭后台：`devtoolbox stop <id>` 或界面上的「关闭」。
+打开开发目录：`tooldock dir <id>`。打开原始程序：`tooldock app <id>`。
 
 ## 发布新版本（维护者）
 

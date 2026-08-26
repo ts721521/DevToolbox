@@ -108,6 +108,9 @@ func Validate(t Tool) error {
 	if kind == "url" && t.URL == "" {
 		return fmt.Errorf("%w: url tool needs url", ErrInvalid)
 	}
+	if kind != "url" && strings.TrimSpace(t.Workdir) == "" {
+		return fmt.Errorf("%w: %s tool needs workdir", ErrInvalid, kind)
+	}
 	return nil
 }
 
@@ -132,6 +135,10 @@ func Normalize(t Tool) Tool {
 		t.Kind = inferKind(t)
 	}
 	t.Platforms = NormalizePlatforms(t.Platforms)
+	t.Group = cleanTabName(t.Group)
+	if t.Group == "" {
+		t.Group = DefaultOther
+	}
 	return t
 }
 
@@ -233,7 +240,10 @@ func Save(t Tool) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p, append(data, '\n'), 0o644)
+	if err := os.WriteFile(p, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return EnsureTab(t.Group)
 }
 
 func Get(id string) (Tool, error) {

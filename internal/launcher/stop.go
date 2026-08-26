@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ts721521/DevToolbox/internal/applog"
 	"github.com/ts721521/DevToolbox/internal/platform"
 	"github.com/ts721521/DevToolbox/internal/proc"
 	"github.com/ts721521/DevToolbox/internal/registry"
@@ -73,21 +74,31 @@ func Launch(t registry.Tool) error {
 		t.Command[i] = platform.Expand(c)
 	}
 	if !t.Supports(runtime.GOOS) {
-		return fmt.Errorf("「%s」不支持当前系统 %s（支援：%s）", t.Name, registry.PlatformLabel(runtime.GOOS), labels(t.Platforms))
+		err := fmt.Errorf("「%s」不支持当前系统 %s（支援：%s）", t.Name, registry.PlatformLabel(runtime.GOOS), labels(t.Platforms))
+		applog.Warn("launch_skip", "id", t.ID, "err", err)
+		return err
 	}
 
+	applog.Info("launch_begin", "id", t.ID, "kind", t.Kind, "workdir", t.Workdir, "url", t.URL, "app", t.AppPath)
+	var err error
 	switch t.Kind {
 	case "url":
-		return platform.OpenURL(t.URL)
+		err = platform.OpenURL(t.URL)
 	case "app":
-		return platform.OpenPath(t.AppPath)
+		err = platform.OpenPath(t.AppPath)
 	case "command":
-		return launchCommand(t)
+		err = launchCommand(t)
 	case "web":
-		return launchWeb(t)
+		err = launchWeb(t)
 	default:
-		return fmt.Errorf("unknown kind %q", t.Kind)
+		err = fmt.Errorf("unknown kind %q", t.Kind)
 	}
+	if err != nil {
+		applog.Error("launch_end", "id", t.ID, "err", err)
+		return err
+	}
+	applog.Info("launch_ok", "id", t.ID)
+	return nil
 }
 
 func launchCommand(t registry.Tool) error {
@@ -154,6 +165,7 @@ func saveCollected(t registry.Tool, extraPID int) {
 }
 
 func Stop(t registry.Tool) error {
+	applog.Info("stop_begin", "id", t.ID, "kind", t.Kind, "name", t.Name)
 	t = t.ForOS(runtime.GOOS)
 	t.Workdir = platform.Expand(t.Workdir)
 	t.URL = platform.Expand(t.URL)
@@ -207,7 +219,7 @@ func Stop(t registry.Tool) error {
 		}
 	}
 	clearRun(t.ID)
-	_ = killed
+	applog.Info("stop_ok", "id", t.ID, "killed", killed, "port", port)
 	return nil
 }
 

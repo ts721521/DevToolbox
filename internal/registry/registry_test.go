@@ -16,12 +16,14 @@ func withTempConfig(t *testing.T) {
 
 func TestSaveListGetRemove(t *testing.T) {
 	withTempConfig(t)
+	wd := t.TempDir()
 
 	tool := Tool{
-		ID:   "highspot-sync",
-		Name: "AVEVA Highspot 同步",
-		Kind: "web",
-		URL:  "http://localhost:8765",
+		ID:      "highspot-sync",
+		Name:    "AVEVA Highspot 同步",
+		Kind:    "web",
+		URL:     "http://localhost:8765",
+		Workdir: wd,
 	}
 	if err := Save(tool); err != nil {
 		t.Fatal(err)
@@ -52,6 +54,17 @@ func TestValidateRejectsBadID(t *testing.T) {
 	err := Validate(Tool{ID: "../etc", Name: "x", Kind: "url", URL: "http://x"})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestValidateRequiresWorkdir(t *testing.T) {
+	err := Validate(Tool{ID: "x", Name: "X", Kind: "web", URL: "http://127.0.0.1:1"})
+	if err == nil {
+		t.Fatal("expected workdir required")
+	}
+	err = Validate(Tool{ID: "y", Name: "Y", Kind: "url", URL: "http://127.0.0.1:1"})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

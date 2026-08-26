@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ts721521/DevToolbox/internal/applog"
 	"github.com/ts721521/DevToolbox/internal/desktop"
 	"github.com/ts721521/DevToolbox/internal/docs"
 	"github.com/ts721521/DevToolbox/internal/launcher"
@@ -40,6 +41,9 @@ func guideFiles() map[string][]byte {
 }
 
 func main() {
+	if err := applog.Init(); err != nil {
+		fmt.Fprintf(os.Stderr, "log init: %v\n", err)
+	}
 	args := os.Args[1:]
 	if len(args) > 0 && strings.HasPrefix(args[0], "-psn_") {
 		args = args[1:]
@@ -54,6 +58,10 @@ func main() {
 		os.Exit(runList())
 	case "open", "launch":
 		os.Exit(runOpen(args[1:]))
+	case "dir", "reveal", "folder":
+		os.Exit(runRevealDir(args[1:]))
+	case "app":
+		os.Exit(runRevealApp(args[1:]))
 	case "stop", "kill":
 		os.Exit(runStop(args[1:]))
 	case "register":
@@ -64,6 +72,8 @@ func main() {
 		os.Exit(runInstallDesktop())
 	case "install-cli":
 		os.Exit(runInstallCLI())
+	case "logs":
+		os.Exit(runLogs())
 	case "version", "-v", "--version":
 		fmt.Printf("devtoolbox %s commit=%s date=%s\n", version.Version, version.Commit, version.Date)
 	case "help", "-h", "--help":
@@ -76,39 +86,50 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Printf("开发工具箱 (devtoolbox) %s — macOS / Windows 本地工具启动器\n\n", version.Version)
+	fmt.Printf("工坞 ToolDock %s — macOS / Windows 本地工具启动器\n\n", version.Version)
 	fmt.Print(`用法:
-  devtoolbox                     打开图形界面
-  devtoolbox list                列出已注册工具
-  devtoolbox open <id>           启动某个工具
-  devtoolbox stop <id>           关闭工具并杀掉后台进程
-  devtoolbox register --file f   从 JSON 注册（其他项目 / 其他 AI 用这个）
-  devtoolbox unregister <id>     移除注册
-  devtoolbox install-desktop     把快捷方式装到桌面（并写入 AGENTS.md）
-  devtoolbox install-cli         安装命令行到 ~/bin
-  devtoolbox version             显示版本
+  tooldock                       打开界面
+  tooldock list                  列出已注册工具
+  tooldock open <id>             启动某个工具
+  tooldock dir <id>              打开开发目录（访达 / 资源管理器）
+  tooldock app <id>              打开原始程序（.app / .exe）
+  tooldock stop <id>             关闭工具并杀掉后台进程
+  tooldock register --file f     从 JSON 注册
+  tooldock unregister <id>       移除注册
+  tooldock install-desktop       安装到「应用程序」并在桌面创建快捷方式
+  tooldock install-cli           安装命令行到 ~/bin
+  tooldock version               显示版本
+  tooldock logs                  显示日志路径并打印最近记录
 
-其他 AI：请读 AGENTS.md（源码目录、安装目录、http://127.0.0.1:17890/AGENTS.md）
+兼容旧命令名 devtoolbox。其他 AI 请读 AGENTS.md。
 `)
 }
 
 func runServe() int {
 	_ = docs.Publish(guideFiles())
 	if server.AlreadyRunning() {
+		applog.Info("already_running", "url", server.URL())
 		_ = platform.OpenInChromeApp(server.URL())
 		return 0
 	}
 	sub, err := fs.Sub(webFS, "web")
 	if err != nil {
+		applog.Error("embed_web", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
 	go func() {
 		_ = platform.OpenInChromeApp(server.URL())
 	}()
-	fmt.Println("开发工具箱", server.URL())
+	logFile, _ := applog.Path()
+	applog.Info("serve", "url", server.URL(), "version", version.Version, "log", logFile)
+	fmt.Println("工坞 ToolDock", server.URL())
+	if logFile != "" {
+		fmt.Println("日志", logFile)
+	}
 	h := server.Handler(http.FileServer(http.FS(sub)), server.Options{Guides: guideFiles()})
 	if err := http.ListenAndServe(server.Addr, h); err != nil {
+		applog.Error("listen", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
@@ -138,7 +159,7 @@ func runList() int {
 
 func runOpen(args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: devtoolbox open <id>")
+		fmt.Fprintln(os.Stderr, "usage: tooldock open <id>")
 		return 2
 	}
 	t, err := registry.Get(args[0])
@@ -153,9 +174,43 @@ func runOpen(args []string) int {
 	return 0
 }
 
+func runRevealDir(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: tooldock dir <id>")
+		return 2
+	}
+	t, err := registry.Get(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := launcher.RevealDir(t); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
+func runRevealApp(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: tooldock app <id>")
+		return 2
+	}
+	t, err := registry.Get(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := launcher.RevealProgram(t); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 func runStop(args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: devtoolbox stop <id>")
+		fmt.Fprintln(os.Stderr, "usage: tooldock stop <id>")
 		return 2
 	}
 	t, err := registry.Get(args[0])
@@ -173,13 +228,15 @@ func runStop(args []string) int {
 
 func runUnregister(args []string) int {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: devtoolbox unregister <id>")
+		fmt.Fprintln(os.Stderr, "usage: tooldock unregister <id>")
 		return 2
 	}
 	if err := registry.Remove(args[0]); err != nil {
+		applog.Warn("cli_unregister", "id", args[0], "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	applog.Info("cli_unregister", "id", args[0])
 	return 0
 }
 
@@ -212,9 +269,11 @@ func runRegister(args []string) int {
 			return 1
 		}
 		if err := registry.Save(t); err != nil {
+			applog.Error("cli_register", "file", *file, "err", err)
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
+		applog.Info("cli_register", "id", t.ID, "file", *file)
 		fmt.Println("registered", t.ID)
 		return 0
 	}
@@ -242,9 +301,11 @@ func runRegister(args []string) int {
 		t.Command = strings.Fields(*execLine)
 	}
 	if err := registry.Save(t); err != nil {
+		applog.Error("cli_register", "id", t.ID, "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	applog.Info("cli_register", "id", t.ID, "name", t.Name)
 	fmt.Println("registered", t.ID)
 	return 0
 }
@@ -258,9 +319,11 @@ func runInstallDesktop() int {
 	_ = docs.Publish(guideFiles())
 	path, err := desktop.Install(self, guideFiles())
 	if err != nil {
+		applog.Error("install_desktop", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	applog.Info("install_desktop", "path", path)
 	fmt.Println(path)
 	return 0
 }
@@ -273,9 +336,27 @@ func runInstallCLI() int {
 	}
 	path, err := desktop.InstallCLI(self)
 	if err != nil {
+		applog.Error("install_cli", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	applog.Info("install_cli", "path", path)
 	fmt.Println(path)
+	return 0
+}
+
+func runLogs() int {
+	p, err := applog.Path()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Println(p)
+	text, err := applog.Tail(300)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Print(text)
 	return 0
 }

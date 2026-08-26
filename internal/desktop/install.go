@@ -1,10 +1,8 @@
 package desktop
 
 import (
+	_ "embed"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,9 +10,19 @@ import (
 	"strings"
 
 	"github.com/ts721521/DevToolbox/internal/platform"
+	"github.com/ts721521/DevToolbox/internal/version"
 )
 
-const AppDisplayName = "开发工具箱"
+const (
+	AppDisplayName = "工坞"
+	AppEnglishName = "ToolDock"
+	BundleID       = "com.tooldock.app"
+	BinName        = "tooldock"
+	LegacyBinName  = "devtoolbox"
+)
+
+//go:embed assets/icon.png
+var iconPNG []byte
 
 func Install(execPath string, extra map[string][]byte) (string, error) {
 	desktop, err := platform.DesktopDir()
@@ -55,20 +63,63 @@ func writeExtra(installed string, extra map[string][]byte) {
 }
 
 func installDarwin(desktop, execPath string) (string, error) {
-	app := filepath.Join(desktop, AppDisplayName+".app")
+	appDir, err := darwinInstallDir()
+	if err != nil {
+		return "", err
+	}
+	app := filepath.Join(appDir, AppDisplayName+".app")
+	if err := writeDarwinBundle(app, execPath); err != nil {
+		return "", err
+	}
+	refreshLaunchServices(app)
+	_ = os.RemoveAll(filepath.Join(desktop, "开发工具箱.app"))
+	if err := makeDesktopShortcut(app, desktop); err != nil {
+		return "", fmt.Errorf("桌面快捷方式: %w", err)
+	}
+	return app, nil
+}
+
+func darwinInstallDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	for _, dir := range []string{"/Applications", filepath.Join(home, "Applications")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			continue
+		}
+		if writable(dir) {
+			return dir, nil
+		}
+	}
+	return platform.DesktopDir()
+}
+
+func writable(dir string) bool {
+	f, err := os.CreateTemp(dir, ".tooldock-write-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
+func writeDarwinBundle(app, execPath string) error {
 	macos := filepath.Join(app, "Contents", "MacOS")
 	res := filepath.Join(app, "Contents", "Resources")
 	for _, d := range []string{macos, res} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
-			return "", err
+			return err
 		}
 	}
-	destBin := filepath.Join(macos, "devtoolbox")
+	destBin := filepath.Join(macos, BinName)
 	if err := copyFile(execPath, destBin); err != nil {
-		return "", err
+		return err
 	}
 	if err := os.Chmod(destBin, 0o755); err != nil {
-		return "", err
+		return err
 	}
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -76,32 +127,64 @@ func installDarwin(desktop, execPath string) (string, error) {
 <dict>
     <key>CFBundleName</key><string>%s</string>
     <key>CFBundleDisplayName</key><string>%s</string>
-    <key>CFBundleIdentifier</key><string>com.devtoolbox.app</string>
-    <key>CFBundleVersion</key><string>1.0.0</string>
-    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundleSpokenName</key><string>%s</string>
+    <key>CFBundleIdentifier</key><string>%s</string>
+    <key>CFBundleVersion</key><string>%s</string>
+    <key>CFBundleShortVersionString</key><string>%s</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleExecutable</key><string>devtoolbox</string>
-    <key>LSMinimumSystemVersion</key><string>10.15</string>
-    <key>NSHighResolutionCapable</key><true/>
+    <key>CFBundleExecutable</key><string>%s</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundleIconName</key><string>AppIcon</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+    <key>LSMinimumSystemVersion</key><string>11.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSSupportsAutomaticTermination</key><false/>
 </dict>
 </plist>
-`, AppDisplayName, AppDisplayName)
+`, AppDisplayName, AppDisplayName, AppEnglishName, BundleID, version.Version, version.Version, BinName)
 	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
-		return "", err
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(app, "Contents", "PkgInfo"), []byte("APPL????"), 0o644); err != nil {
+		return err
 	}
 	if err := writeIcns(filepath.Join(res, "AppIcon.icns")); err != nil {
-		// icon is optional
-		_ = err
+		return fmt.Errorf("icon: %w", err)
 	}
-	return app, nil
+	_ = exec.Command("xattr", "-cr", app).Run()
+	return nil
+}
+
+func makeDesktopShortcut(app, desktop string) error {
+	for _, name := range []string{
+		AppDisplayName,
+		AppDisplayName + ".app",
+		"开发工具箱",
+		"开发工具箱.app",
+	} {
+		_ = os.RemoveAll(filepath.Join(desktop, name))
+	}
+	// 符号链接即可双击打开，且不依赖 Finder 自动化授权。
+	return os.Symlink(app, filepath.Join(desktop, AppDisplayName+".app"))
+}
+
+func refreshLaunchServices(app string) {
+	_ = exec.Command("touch", app).Run()
 }
 
 func installWindows(desktop, execPath string) (string, error) {
-	dest := filepath.Join(desktop, AppDisplayName+".exe")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, "AppData", "Local", "Programs", AppEnglishName)
+	_ = os.MkdirAll(dir, 0o755)
+	dest := filepath.Join(dir, AppDisplayName+".exe")
 	if err := copyFile(execPath, dest); err != nil {
 		return "", err
 	}
+	desk := filepath.Join(desktop, AppDisplayName+".exe")
+	_ = copyFile(execPath, desk)
 	return dest, nil
 }
 
@@ -113,20 +196,25 @@ func installLinux(desktop, execPath string) (string, error) {
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		return "", err
 	}
-	destBin := filepath.Join(binDir, "devtoolbox")
+	destBin := filepath.Join(binDir, BinName)
 	if err := copyFile(execPath, destBin); err != nil {
 		return "", err
 	}
 	_ = os.Chmod(destBin, 0o755)
-	entry := filepath.Join(desktop, "devtoolbox.desktop")
+	_ = os.Symlink(destBin, filepath.Join(binDir, LegacyBinName))
+	iconPath := filepath.Join(binDir, BinName+".png")
+	_ = os.WriteFile(iconPath, iconPNG, 0o644)
+	entry := filepath.Join(desktop, BinName+".desktop")
 	body := fmt.Sprintf(`[Desktop Entry]
 Type=Application
 Name=%s
-Comment=Central launcher for local dev tools
+GenericName=%s
+Comment=Local launcher for development tools
 Exec=%s
+Icon=%s
 Terminal=false
 Categories=Development;
-`, AppDisplayName, destBin)
+`, AppDisplayName, AppEnglishName, destBin, iconPath)
 	if err := os.WriteFile(entry, []byte(body), 0o755); err != nil {
 		return "", err
 	}
@@ -141,15 +229,22 @@ func InstallCLI(execPath string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	name := "devtoolbox"
+	ext := ""
 	if runtime.GOOS == "windows" {
-		name += ".exe"
+		ext = ".exe"
 	}
-	dest := filepath.Join(dir, name)
+	dest := filepath.Join(dir, BinName+ext)
 	if err := copyFile(execPath, dest); err != nil {
 		return "", err
 	}
 	_ = os.Chmod(dest, 0o755)
+	legacy := filepath.Join(dir, LegacyBinName+ext)
+	_ = os.Remove(legacy)
+	if runtime.GOOS == "windows" {
+		_ = copyFile(dest, legacy)
+	} else {
+		_ = os.Symlink(dest, legacy)
+	}
 	return dest, nil
 }
 
@@ -170,15 +265,18 @@ func copyFile(src, dst string) error {
 
 func writeIcns(icnsPath string) error {
 	if runtime.GOOS != "darwin" {
-		return nil
+		return os.WriteFile(strings.TrimSuffix(icnsPath, ".icns")+".png", iconPNG, 0o644)
 	}
-	tmp, err := os.MkdirTemp("", "devtoolbox-icon")
+	if len(iconPNG) == 0 {
+		return fmt.Errorf("missing embedded icon")
+	}
+	tmp, err := os.MkdirTemp("", "tooldock-icon")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
 	pngPath := filepath.Join(tmp, "icon.png")
-	if err := writePNG(pngPath, 1024); err != nil {
+	if err := os.WriteFile(pngPath, iconPNG, 0o644); err != nil {
 		return err
 	}
 	iconset := filepath.Join(tmp, "icon.iconset")
@@ -202,46 +300,6 @@ func writeIcns(icnsPath string) error {
 	return exec.Command("iconutil", "-c", "icns", iconset, "-o", icnsPath).Run()
 }
 
-func writePNG(path string, size int) error {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	bg := color.RGBA{10, 10, 18, 255}
-	accent := color.RGBA{59, 130, 246, 255}
-	purple := color.RGBA{139, 92, 246, 255}
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			img.Set(x, y, bg)
-		}
-	}
-	margin := size / 8
-	for y := margin; y < size-margin; y++ {
-		for x := margin; x < size-margin; x++ {
-			t := float64(x-margin) / float64(size-2*margin)
-			c := color.RGBA{
-				R: uint8(float64(accent.R)*(1-t) + float64(purple.R)*t),
-				G: uint8(float64(accent.G)*(1-t) + float64(purple.G)*t),
-				B: uint8(float64(accent.B)*(1-t) + float64(purple.B)*t),
-				A: 255,
-			}
-			img.Set(x, y, c)
-		}
-	}
-	inner := size / 4
-	for y := inner; y < size-inner; y++ {
-		for x := inner; x < size-inner; x++ {
-			if (x+y)%(size/16) < size/48 {
-				continue
-			}
-			img.Set(x, y, bg)
-		}
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return png.Encode(f, img)
-}
-
 func SelfPath() (string, error) {
 	p, err := os.Executable()
 	if err != nil {
@@ -252,8 +310,4 @@ func SelfPath() (string, error) {
 
 func OpenInstalled(path string) error {
 	return platform.OpenPath(path)
-}
-
-func Quote(s string) string {
-	return strings.TrimSpace(s)
 }
