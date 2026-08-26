@@ -32,8 +32,13 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: 测试
+      - name: 测试 (Linux, race)
+        if: runner.os == 'Linux'
         run: go test -race -coverprofile=coverage.out ./...
+
+      - name: 测试
+        if: runner.os != 'Linux'
+        run: go test ./...
 
       - name: 交叉编译抽查
         if: runner.os == 'Linux'

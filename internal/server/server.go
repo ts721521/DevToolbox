@@ -26,7 +26,7 @@ type Options struct {
 func Handler(static http.Handler, opt Options) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, 200, map[string]any{"ok": true, "name": "DevToolbox"})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": "DevToolbox"})
 	})
 	mux.HandleFunc("GET /api/system", handleSystem)
 	mux.HandleFunc("GET /api/tools", handleList)
@@ -68,7 +68,7 @@ func handleSystem(w http.ResponseWriter, _ *http.Request) {
 			cli += ".exe"
 		}
 	}
-	writeJSON(w, 200, map[string]any{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"name":            "DevToolbox",
 		"version":         version.Version,
 		"os":              runtime.GOOS,
@@ -90,7 +90,7 @@ func handleSystem(w http.ResponseWriter, _ *http.Request) {
 func handleList(w http.ResponseWriter, _ *http.Request) {
 	tools, err := registry.List()
 	if err != nil {
-		http.Error(w, err.Error(), 500)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	type item struct {
@@ -119,72 +119,72 @@ func handleList(w http.ResponseWriter, _ *http.Request) {
 			CurrentOS:  registry.PlatformLabel(runtime.GOOS),
 		})
 	}
-	writeJSON(w, 200, out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 func handleGet(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		status := 400
+		status := http.StatusBadRequest
 		if errors.Is(err, registry.ErrNotFound) {
-			status = 404
+			status = http.StatusNotFound
 		}
 		http.Error(w, err.Error(), status)
 		return
 	}
-	writeJSON(w, 200, t)
+	writeJSON(w, http.StatusOK, t)
 }
 
 func handleRegister(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	var one registry.Tool
 	if err := json.Unmarshal(body, &one); err != nil {
-		http.Error(w, "invalid json", 400)
+		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 	if err := registry.Save(one); err != nil {
-		http.Error(w, err.Error(), 400)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "id": one.ID})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": one.ID})
 }
 
 func handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err := registry.Remove(r.PathValue("id")); err != nil {
-		http.Error(w, err.Error(), 404)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func handleLaunch(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), 404)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	if err := launcher.Launch(t); err != nil {
-		http.Error(w, err.Error(), 409)
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "id": t.ID})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": t.ID})
 }
 
 func handleStop(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), 404)
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	if err := launcher.Stop(t); err != nil {
-		http.Error(w, err.Error(), 409)
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "id": t.ID, "running": launcher.Probe(t).Running})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": t.ID, "running": launcher.Probe(t).Running})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 修复
+- CI：Windows 覆盖率参数、macOS race 与 staticcheck HTTP 状态码
+
 ## [1.0.0] - 2026-08-26
 
 ### 新增
