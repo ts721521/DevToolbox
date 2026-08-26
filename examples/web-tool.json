@@ -2,7 +2,7 @@
   "id": "example-web",
   "name": "示例 Web 控制台",
   "description": "把 workdir / command / url 改成你的项目",
-  "group": "示例",
+  "group": "开发",
   "kind": "web",
   "platforms": ["darwin", "windows"],
   "workdir": "/path/to/project",

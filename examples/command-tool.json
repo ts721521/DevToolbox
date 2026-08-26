@@ -1,6 +1,7 @@
 {
   "id": "example-command",
   "name": "示例命令行工具",
+  "group": "开发",
   "kind": "command",
   "platforms": ["darwin", "windows"],
   "workdir": "/path/to/project",

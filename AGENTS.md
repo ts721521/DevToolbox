@@ -9,12 +9,12 @@
 
 | 项 | 值 |
 |----|----|
-| 名称 | 开发工具箱 / DevToolbox |
+| 名称 | 工坞 / ToolDock |
 | 仓库 | https://github.com/ts721521/DevToolbox |
 | 技术栈 | Go 1.22+ · 标准库 HTTP · 嵌入式 Web UI |
 | 支援系统 | **macOS + Windows**（Linux 可编译） |
 | 本机 UI | `http://127.0.0.1:17890` |
-| CLI | `devtoolbox`（`~/bin` 或桌面 App 内） |
+| CLI | `tooldock`（兼容别名 `devtoolbox`） |
 | 许可证 | MIT |
 
 ## 注册新工具（必须这样做）
@@ -25,13 +25,13 @@
 2. 执行：
 
 ```bash
-devtoolbox register --file .devtoolbox.json
+tooldock register --file .devtoolbox.json
 ```
 
 CLI 不在 PATH 时：
 
-- macOS: `~/bin/devtoolbox` 或 `~/Desktop/开发工具箱.app/Contents/MacOS/devtoolbox`
-- Windows: `%USERPROFILE%\bin\devtoolbox.exe` 或桌面 `开发工具箱.exe`
+- macOS: `~/bin/tooldock`（兼容 `devtoolbox`）或 `/Applications/工坞.app`
+- Windows: `%USERPROFILE%\bin\tooldock.exe` 或 `%LOCALAPPDATA%\Programs\ToolDock\`
 
 3. **不要**再创建 `.command` / `.lnk` 到桌面。
 
@@ -47,7 +47,7 @@ CLI 不在 PATH 时：
 
 安装目录里也有本文件：
 
-- macOS：`开发工具箱.app/Contents/Resources/AGENTS.md`
+- macOS：`/Applications/工坞.app/Contents/Resources/AGENTS.md`
 - Windows：exe 旁边的 `AGENTS.md`
 - 配置根：`…/DevToolbox/AGENTS.md`
 
@@ -55,6 +55,9 @@ CLI 不在 PATH 时：
 
 - `id`：`[a-zA-Z0-9][a-zA-Z0-9._-]*`
 - `kind`：`web` | `command` | `app` | `url`
+- `group`：标签页名称。注册前先 `GET /api/tabs`，优先用已有标签（默认：**工作 / 财务 / 开发 / 其他**），不要自己发明一堆分类
+- **`workdir` 必填**（`kind=url` 除外）：当前项目根绝对路径。用户点「目录」或 `tooldock dir <id>` 会打开这里
+- 已安装的桌面程序再写 `app_path`（`.app` / `.exe`）。「程序」/ `tooldock app <id>` 打开它。`kind=app` 时 **workdir + app_path 都要写**
 - `platforms`：`darwin` / `windows`（默认两者都有）
 - Windows 覆盖：`command_windows`、`workdir_windows`、`app_path_windows`
 - `process_match`：关闭时用来找后台进程
@@ -63,13 +66,28 @@ CLI 不在 PATH 时：
 打开 / 关闭：
 
 ```bash
-devtoolbox open <id>
-devtoolbox stop <id>
-devtoolbox list
-devtoolbox version
+tooldock open <id>
+tooldock dir <id>
+tooldock app <id>
+tooldock stop <id>
+tooldock list
+tooldock version
+tooldock logs
 ```
 
-HTTP：`POST /api/tools/{id}/launch` · `POST /api/tools/{id}/stop` · `GET /api/system`
+HTTP：`POST /api/tools/{id}/launch` · `POST /api/tools/{id}/dir` · `POST /api/tools/{id}/app` · `POST /api/tools/{id}/stop` · `GET /api/system` · `GET /api/tabs` · `POST /api/tools/move` · `GET /api/logs`
+
+## 排障日志
+
+启动、关闭、注册、HTTP 4xx/5xx 都会写进文本日志（同时打 stderr）。界面右上角「日志」可看最近记录。
+
+| 系统 | 文件 |
+|------|------|
+| macOS | `~/Library/Application Support/DevToolbox/logs/tooldock.log` |
+| Windows | `%AppData%\DevToolbox\logs\tooldock.log` |
+| Linux | `~/.config/DevToolbox/logs/tooldock.log` |
+
+超过约 2MB 会滚到 `tooldock.log.1`。查 bug 时先读这个文件。
 
 ## 改本仓库
 

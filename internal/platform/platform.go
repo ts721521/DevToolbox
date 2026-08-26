@@ -37,6 +37,37 @@ func OpenPath(path string) error {
 	return openPathOrURL(path)
 }
 
+// Reveal opens a folder in the file manager, or selects a file/app in it.
+func Reveal(path string) error {
+	path = Expand(path)
+	if path == "" {
+		return fmt.Errorf("empty path")
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		isApp := strings.HasSuffix(strings.ToLower(path), ".app")
+		if st.IsDir() && !isApp {
+			return exec.Command("open", path).Start()
+		}
+		return exec.Command("open", "-R", path).Start()
+	case "windows":
+		if st.IsDir() {
+			return exec.Command("explorer", path).Start()
+		}
+		return exec.Command("explorer", "/select,"+path).Start()
+	default:
+		target := path
+		if !st.IsDir() {
+			target = filepath.Dir(path)
+		}
+		return exec.Command("xdg-open", target).Start()
+	}
+}
+
 func openPathOrURL(target string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {

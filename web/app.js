@@ -1,5 +1,14 @@
 const $ = (id) => document.getElementById(id);
 
+const ALL = "全部";
+const TAB_KEY = "tooldock.tab";
+
+let allTools = [];
+let tabs = [];
+let currentTab = localStorage.getItem(TAB_KEY) || ALL;
+let selectMode = false;
+const selected = new Set();
+
 async function api(path, opts = {}) {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
@@ -18,14 +27,55 @@ function platformBadges(t) {
     .join("");
 }
 
-function render(tools) {
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/"/g, "&quot;");
+}
+
+function visibleTools() {
   const q = $("q").value.trim().toLowerCase();
-  const filtered = tools.filter((t) => {
+  return allTools.filter((t) => {
+    if (currentTab !== ALL && (t.group || "") !== currentTab) return false;
     const blob = [t.name, t.id, t.group, t.description, t.url, ...(t.platform_labels || [])]
       .join(" ")
       .toLowerCase();
     return !q || blob.includes(q);
   });
+}
+
+function renderTabs() {
+  const counts = { [ALL]: allTools.length };
+  for (const name of tabs) counts[name] = 0;
+  for (const t of allTools) {
+    const g = t.group || "其他";
+    counts[g] = (counts[g] || 0) + 1;
+  }
+  const names = [ALL, ...tabs];
+  $("tabbar").innerHTML =
+    names
+      .map((name) => {
+        const n = counts[name] || 0;
+        const active = name === currentTab ? "active" : "";
+        const del =
+          name !== ALL && name !== "其他"
+            ? `<span class="tab-x" data-tab-del="${escapeHtml(name)}" title="删除标签">×</span>`
+            : "";
+        return `<button type="button" class="tab ${active}" draggable="false" data-tab="${escapeHtml(
+          name
+        )}">${escapeHtml(name)} ${n}${del}</button>`;
+      })
+      .join("") + `<button type="button" class="tab tab-add" id="btn-tab-add">+ 新标签</button>`;
+
+  const dl = $("tab-list");
+  dl.innerHTML = tabs.map((n) => `<option value="${escapeHtml(n)}"></option>`).join("");
+  const sel = $("batch-target");
+  sel.innerHTML = tabs.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
+}
+
+function render() {
+  const filtered = visibleTools();
   $("empty").classList.toggle("hidden", filtered.length > 0);
   $("list").innerHTML = filtered
     .map((t) => {
@@ -35,8 +85,17 @@ function render(tools) {
         ? `<button class="btn primary" data-open="${escapeHtml(t.id)}">打开</button>`
         : `<button class="btn" disabled>当前系统不可用</button>`;
       const pids = t.pids && t.pids.length ? ` · PID ${t.pids.join(",")}` : "";
+      const checked = selected.has(t.id) ? "checked" : "";
+      const selCls = selected.has(t.id) ? "selected" : "";
+      const dirBtn = t.workdir
+        ? `<button class="btn" data-dir="${escapeHtml(t.id)}">目录</button>`
+        : "";
+      const appBtn = t.app_path
+        ? `<button class="btn" data-app="${escapeHtml(t.id)}">程序</button>`
+        : "";
       return `
-    <article class="card ${t.compatible ? "" : "incompat"}">
+    <article class="card ${t.compatible ? "" : "incompat"} ${selCls}" draggable="true" data-id="${escapeHtml(t.id)}">
+      <label class="pick"><input type="checkbox" data-pick="${escapeHtml(t.id)}" ${checked} />选择</label>
       <div class="row">
         <h3>${escapeHtml(t.name)}</h3>
         <span><span class="dot ${t.running ? "on" : "off"}"></span>${t.running ? "运行中" : "未启动"}${pids}</span>
@@ -49,18 +108,15 @@ function render(tools) {
       <div class="actions">
         ${openBtn}
         ${stopBtn}
+        ${dirBtn}
+        ${appBtn}
+        <button class="btn" data-move="${escapeHtml(t.id)}">移到…</button>
         <button class="btn" data-del="${escapeHtml(t.id)}">移除</button>
       </div>
     </article>`;
     })
     .join("");
-}
-
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/"/g, "&quot;");
+  $("sel-count").textContent = `已选 ${selected.size}`;
 }
 
 async function loadSystem() {
@@ -68,26 +124,50 @@ async function loadSystem() {
     const s = await api("/api/system");
     $("sys").innerHTML = `
       <span>本机 <strong>${escapeHtml(s.os_name)} ${escapeHtml(s.arch)}</strong></span>
-      <span>工具箱支援 <strong>macOS · Windows</strong></span>
+      <span>工坞支援 <strong>macOS · Windows</strong></span>
       <span>配置 ${escapeHtml(s.tools_dir)}</span>`;
-    $("sysline").textContent = `本机 ${s.os_name} ${s.arch} · 支援 macOS / Windows · 打开后可一键关闭后台`;
+    $("sysline").textContent = `工坞 · 本机 ${s.os_name} ${s.arch} · 支援 macOS / Windows`;
   } catch (_) {
-    $("sys").innerHTML = `<span>工具箱支援 <strong>macOS · Windows</strong></span>`;
+    $("sys").innerHTML = `<span>工坞支援 <strong>macOS · Windows</strong></span>`;
   }
 }
 
 async function refresh() {
   try {
-    const tools = await api("/api/tools");
-    render(tools);
+    const [tools, tabData] = await Promise.all([api("/api/tools"), api("/api/tabs")]);
+    allTools = tools;
+    tabs = tabData.tabs || [];
+    if (currentTab !== ALL && !tabs.includes(currentTab)) {
+      currentTab = ALL;
+      localStorage.setItem(TAB_KEY, currentTab);
+    }
+    renderTabs();
+    render();
   } catch (err) {
     $("list").innerHTML = `<p class="empty">${escapeHtml(err.message)}</p>`;
   }
 }
 
-$("q").addEventListener("input", refresh);
+function setSelectMode(on) {
+  selectMode = on;
+  document.body.classList.toggle("selecting", on);
+  $("batchbar").classList.toggle("hidden", !on);
+  $("btn-select").textContent = on ? "完成" : "选择";
+  if (!on) selected.clear();
+  render();
+}
+
+async function moveIds(ids, group) {
+  if (!ids.length || !group) return;
+  await api("/api/tools/move", { method: "POST", body: JSON.stringify({ ids, group }) });
+  ids.forEach((id) => selected.delete(id));
+  await refresh();
+}
+
+$("q").addEventListener("input", render);
 $("btn-add").addEventListener("click", () => $("form").classList.remove("hidden"));
 $("btn-cancel").addEventListener("click", () => $("form").classList.add("hidden"));
+$("btn-select").addEventListener("click", () => setSelectMode(!selectMode));
 
 $("btn-save").addEventListener("click", async () => {
   const exec = $("f-exec").value.trim();
@@ -98,7 +178,7 @@ $("btn-save").addEventListener("click", async () => {
     id: $("f-id").value.trim(),
     name: $("f-name").value.trim(),
     kind: $("f-kind").value,
-    group: $("f-group").value.trim(),
+    group: $("f-group").value.trim() || "其他",
     workdir: $("f-workdir").value.trim(),
     command: exec ? exec.split(/\s+/) : [],
     url: $("f-url").value.trim(),
@@ -118,20 +198,245 @@ $("btn-save").addEventListener("click", async () => {
 });
 
 $("list").addEventListener("click", async (e) => {
+  const pick = e.target.dataset.pick;
   const open = e.target.dataset.open;
   const stop = e.target.dataset.stop;
+  const dir = e.target.dataset.dir;
+  const app = e.target.dataset.app;
   const del = e.target.dataset.del;
+  const move = e.target.dataset.move;
   try {
+    if (pick) {
+      if (e.target.checked) selected.add(pick);
+      else selected.delete(pick);
+      $("sel-count").textContent = `已选 ${selected.size}`;
+      e.target.closest(".card")?.classList.toggle("selected", e.target.checked);
+      return;
+    }
     if (open) await api(`/api/tools/${encodeURIComponent(open)}/launch`, { method: "POST" });
+    if (dir) await api(`/api/tools/${encodeURIComponent(dir)}/dir`, { method: "POST" });
+    if (app) await api(`/api/tools/${encodeURIComponent(app)}/app`, { method: "POST" });
     if (stop) {
       e.target.disabled = true;
       await api(`/api/tools/${encodeURIComponent(stop)}/stop`, { method: "POST" });
       await refresh();
     }
+    if (move) {
+      const dest = prompt(`把「${move}」移到哪个标签？\n${tabs.join(" / ")}`, currentTab === ALL ? tabs[0] : currentTab);
+      if (dest) await moveIds([move], dest.trim());
+    }
     if (del && confirm("从工具箱移除这个快捷方式？不会删除工具本身。")) {
       await api(`/api/tools/${encodeURIComponent(del)}`, { method: "DELETE" });
+      selected.delete(del);
       await refresh();
     }
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("list").addEventListener("dragstart", (e) => {
+  const card = e.target.closest("[data-id]");
+  if (!card) return;
+  e.dataTransfer.setData("text/plain", card.dataset.id);
+  e.dataTransfer.effectAllowed = "move";
+  card.classList.add("dragging");
+});
+$("list").addEventListener("dragend", (e) => {
+  e.target.closest("[data-id]")?.classList.remove("dragging");
+});
+
+$("tabbar").addEventListener("click", async (e) => {
+  const del = e.target.dataset.tabDel;
+  if (del) {
+    e.stopPropagation();
+    if (!confirm(`删除标签「${del}」？里面的工具会移到「其他」。`)) return;
+    try {
+      await api(`/api/tabs/${encodeURIComponent(del)}?move=${encodeURIComponent("其他")}`, { method: "DELETE" });
+      if (currentTab === del) currentTab = ALL;
+      await refresh();
+    } catch (err) {
+      alert(err.message);
+    }
+    return;
+  }
+  if (e.target.id === "btn-tab-add") {
+    const name = prompt("新标签名称（尽量用已有的工作/财务/开发/其他）");
+    if (!name) return;
+    try {
+      const data = await api("/api/tabs", { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      currentTab = data.name || name.trim();
+      localStorage.setItem(TAB_KEY, currentTab);
+      await refresh();
+    } catch (err) {
+      alert(err.message);
+    }
+    return;
+  }
+  const tab = e.target.closest("[data-tab]");
+  if (!tab) return;
+  const name = tab.dataset.tab;
+  if (selectMode && selected.size && name !== ALL) {
+    try {
+      await moveIds([...selected], name);
+      return;
+    } catch (err) {
+      alert(err.message);
+      return;
+    }
+  }
+  currentTab = name;
+  localStorage.setItem(TAB_KEY, currentTab);
+  renderTabs();
+  render();
+});
+
+$("tabbar").addEventListener("dblclick", async (e) => {
+  const tab = e.target.closest("[data-tab]");
+  if (!tab) return;
+  const from = tab.dataset.tab;
+  if (from === ALL || from === "其他") return;
+  const to = prompt("重命名标签", from);
+  if (!to || to.trim() === from) return;
+  try {
+    const data = await api("/api/tabs/rename", { method: "POST", body: JSON.stringify({ from, to: to.trim() }) });
+    currentTab = data.to || to.trim();
+    localStorage.setItem(TAB_KEY, currentTab);
+    await refresh();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("tabbar").addEventListener("dragover", (e) => {
+  const tab = e.target.closest("[data-tab]");
+  if (!tab || tab.dataset.tab === ALL) return;
+  e.preventDefault();
+  tab.classList.add("drop");
+});
+$("tabbar").addEventListener("dragleave", (e) => {
+  e.target.closest("[data-tab]")?.classList.remove("drop");
+});
+$("tabbar").addEventListener("drop", async (e) => {
+  const tab = e.target.closest("[data-tab]");
+  if (!tab || tab.dataset.tab === ALL) return;
+  e.preventDefault();
+  tab.classList.remove("drop");
+  const id = e.dataTransfer.getData("text/plain");
+  const ids = selected.size && selected.has(id) ? [...selected] : id ? [id] : [];
+  try {
+    await moveIds(ids, tab.dataset.tab);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+$("btn-batch-move").addEventListener("click", async () => {
+  try {
+    await moveIds([...selected], $("batch-target").value);
+  } catch (err) {
+    alert(err.message);
+  }
+});
+$("btn-select-all").addEventListener("click", () => {
+  visibleTools().forEach((t) => selected.add(t.id));
+  render();
+});
+$("btn-select-clear").addEventListener("click", () => {
+  selected.clear();
+  render();
+});
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    const el = document.createElement("textarea");
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    const ok = document.execCommand("copy");
+    el.remove();
+    return ok;
+  }
+}
+
+function showCopied() {
+  $("ai-copied").classList.remove("hidden");
+  setTimeout(() => $("ai-copied").classList.add("hidden"), 2500);
+}
+
+async function openAIModal() {
+  const data = await api("/api/ai-handoff");
+  $("ai-url").value = data.url;
+  $("ai-prompt").value = data.prompt;
+  $("ai-modal").classList.remove("hidden");
+  if (await copyText(data.prompt)) showCopied();
+}
+
+$("btn-ai").addEventListener("click", async () => {
+  try {
+    await openAIModal();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+$("btn-ai-close").addEventListener("click", () => $("ai-modal").classList.add("hidden"));
+$("ai-modal").addEventListener("click", (e) => {
+  if (e.target === $("ai-modal")) $("ai-modal").classList.add("hidden");
+});
+$("btn-copy-prompt").addEventListener("click", async () => {
+  if (await copyText($("ai-prompt").value)) showCopied();
+});
+$("btn-copy-url").addEventListener("click", async () => {
+  if (await copyText($("ai-url").value)) showCopied();
+});
+$("btn-open-ai").addEventListener("click", () => {
+  window.open($("ai-url").value, "_blank");
+});
+$("ai-url").addEventListener("focus", (e) => e.target.select());
+$("ai-prompt").addEventListener("focus", (e) => e.target.select());
+
+async function loadLogs() {
+  const data = await api("/api/logs");
+  $("log-path").textContent = data.path || "";
+  $("log-text").textContent = data.text || "(还没有日志)";
+  $("log-text").scrollTop = $("log-text").scrollHeight;
+}
+
+async function openLogModal() {
+  $("log-modal").classList.remove("hidden");
+  await loadLogs();
+}
+
+$("btn-logs").addEventListener("click", async () => {
+  try {
+    await openLogModal();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+$("btn-log-close").addEventListener("click", () => $("log-modal").classList.add("hidden"));
+$("log-modal").addEventListener("click", (e) => {
+  if (e.target === $("log-modal")) $("log-modal").classList.add("hidden");
+});
+$("btn-log-refresh").addEventListener("click", async () => {
+  try {
+    await loadLogs();
+  } catch (err) {
+    alert(err.message);
+  }
+});
+$("btn-log-copy").addEventListener("click", async () => {
+  if (await copyText($("log-text").textContent)) {
+    $("log-copied").classList.remove("hidden");
+    setTimeout(() => $("log-copied").classList.add("hidden"), 2000);
+  }
+});
+$("btn-log-folder").addEventListener("click", async () => {
+  try {
+    await api("/api/logs/open", { method: "POST", body: "{}" });
   } catch (err) {
     alert(err.message);
   }

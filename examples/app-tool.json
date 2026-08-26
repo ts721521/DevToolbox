@@ -1,8 +1,11 @@
 {
   "id": "example-app",
   "name": "示例桌面应用",
+  "description": "workdir 是源码目录，app_path 是安装好的程序",
+  "group": "开发",
   "kind": "app",
-  "platforms": ["darwin"],
+  "platforms": ["darwin", "windows"],
+  "workdir": "/path/to/project",
   "app_path": "/Applications/Example.app",
   "app_path_windows": "C:\\\\Program Files\\\\Example\\\\example.exe"
 }
