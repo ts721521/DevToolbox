@@ -16,6 +16,7 @@ func TestPathAndTail(t *testing.T) {
 	if err := Init(); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(Close)
 	Info("hello", "k", 1)
 	Error("boom", "err", "x")
 	p, err := Path()
