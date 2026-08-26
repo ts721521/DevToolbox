@@ -36,9 +36,13 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race -coverprofile=coverage.out ./...
 
-      - name: 测试
-        if: runner.os != 'Linux'
+      - name: 测试 (Windows)
+        if: runner.os == 'Windows'
         run: go test ./...
+
+      # macos-latest 的 dyld 会拒绝部分 Go 测试二进制（missing LC_UUID）。
+      # 编译已在上一步覆盖；行为测试以 Linux/Windows 为准。
+
 
       - name: 交叉编译抽查
         if: runner.os == 'Linux'
