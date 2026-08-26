@@ -10,7 +10,7 @@ rules:
   subject-case: [0]
   header-max-length: [1, always, 100]
   body-leading-blank: [1, always]
-  body-line-length: [1, always, 100]
+  body-max-line-length: [1, always, 100]
 
 parser-preset:
   parserOpts:
