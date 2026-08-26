@@ -1,0 +1,8 @@
+{
+  "id": "example-app",
+  "name": "示例桌面应用",
+  "kind": "app",
+  "platforms": ["darwin"],
+  "app_path": "/Applications/Example.app",
+  "app_path_windows": "C:\\\\Program Files\\\\Example\\\\example.exe"
+}

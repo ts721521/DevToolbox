@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevToolbox tool",
+  "type": "object",
+  "required": ["id", "name"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
+    "name": { "type": "string" },
+    "description": { "type": "string" },
+    "group": { "type": "string" },
+    "kind": { "type": "string", "enum": ["web", "command", "app", "url"] },
+    "platforms": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["darwin", "windows", "linux", "macos", "mac"] }
+    },
+    "workdir": { "type": "string" },
+    "command": { "type": "array", "items": { "type": "string" } },
+    "command_windows": { "type": "array", "items": { "type": "string" } },
+    "command_darwin": { "type": "array", "items": { "type": "string" } },
+    "workdir_windows": { "type": "string" },
+    "workdir_darwin": { "type": "string" },
+    "url": { "type": "string" },
+    "health_url": { "type": "string" },
+    "health_contains": { "type": "string" },
+    "app_path": { "type": "string" },
+    "app_path_windows": { "type": "string" },
+    "app_path_darwin": { "type": "string" },
+    "terminal": { "type": "boolean" },
+    "process_match": { "type": "string" },
+    "stop_command": { "type": "array", "items": { "type": "string" } }
+  }
+}

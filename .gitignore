@@ -1,0 +1,7 @@
+/devtoolbox
+/devtoolbox.exe
+/dist/
+*.icns
+*.iconset/
+.DS_Store
+/seeds/

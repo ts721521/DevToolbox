@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>开发工具箱</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div>
+        <h1>开发工具箱</h1>
+        <p class="sub" id="sysline">所有本地工具一个入口 · 注册一次，随时打开 / 关闭</p>
+      </div>
+      <div class="top-actions">
+        <input id="q" class="search" placeholder="搜索工具…" />
+        <button id="btn-add" class="btn">注册工具</button>
+      </div>
+    </header>
+
+    <section id="sys" class="sysbar"></section>
+
+    <section id="form" class="panel form hidden">
+      <h2>注册一个工具</h2>
+      <div class="grid">
+        <label>ID<input id="f-id" placeholder="highspot-sync" /></label>
+        <label>名称<input id="f-name" placeholder="AVEVA Highspot 同步" /></label>
+        <label>类型
+          <select id="f-kind">
+            <option value="web">Web 控制台</option>
+            <option value="command">命令 / 脚本</option>
+            <option value="app">桌面 App</option>
+            <option value="url">仅打开网址</option>
+          </select>
+        </label>
+        <label>分组<input id="f-group" placeholder="AVEVA / 财务 / 开发" /></label>
+        <label class="wide">工作目录<input id="f-workdir" placeholder="/path/to/project" /></label>
+        <label class="wide">启动命令<input id="f-exec" placeholder="python3 server.py" /></label>
+        <label>网址<input id="f-url" placeholder="http://localhost:8765" /></label>
+        <label>健康检查包含<input id="f-health" placeholder="AVEVA Highspot" /></label>
+        <label class="wide">App 路径<input id="f-app" placeholder="/Applications/Foo.app" /></label>
+        <label class="check"><input type="checkbox" id="f-mac" checked /> 支援 macOS</label>
+        <label class="check"><input type="checkbox" id="f-win" checked /> 支援 Windows</label>
+        <label class="check"><input type="checkbox" id="f-term" checked /> 在终端里运行（可看日志 / Ctrl+C）</label>
+      </div>
+      <div class="form-actions">
+        <button id="btn-save" class="btn primary">保存</button>
+        <button id="btn-cancel" class="btn">取消</button>
+      </div>
+      <p class="hint">其他 AI：读本目录或安装目录里的 <a href="/AGENTS.md">AGENTS.md</a>，用 <code>devtoolbox register --file .devtoolbox.json</code> 注册。不要再往桌面堆单独快捷方式。</p>
+    </section>
+
+    <main id="list" class="list"></main>
+    <p id="empty" class="empty hidden">还没有工具。点右上角「注册工具」，或执行 <code>devtoolbox register --file .devtoolbox.json</code></p>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

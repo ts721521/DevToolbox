@@ -1,0 +1,11 @@
+{
+  "id": "example-command",
+  "name": "示例命令行工具",
+  "kind": "command",
+  "platforms": ["darwin", "windows"],
+  "workdir": "/path/to/project",
+  "command": ["python3", "app.py"],
+  "command_windows": ["python", "app.py"],
+  "process_match": "app.py",
+  "terminal": true
+}

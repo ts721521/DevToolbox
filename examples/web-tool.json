@@ -1,0 +1,16 @@
+{
+  "id": "example-web",
+  "name": "示例 Web 控制台",
+  "description": "把 workdir / command / url 改成你的项目",
+  "group": "示例",
+  "kind": "web",
+  "platforms": ["darwin", "windows"],
+  "workdir": "/path/to/project",
+  "command": ["python3", "server.py"],
+  "command_windows": ["python", "server.py"],
+  "url": "http://localhost:8765",
+  "health_url": "http://localhost:8765/",
+  "health_contains": "页面里一段不会撞车的文字",
+  "process_match": "server.py",
+  "terminal": true
+}

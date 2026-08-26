@@ -1,0 +1,28 @@
+rules:
+  type-enum:
+    - 2
+    - 必须使用以下类型
+    - feat
+    - fix
+    - docs
+    - style
+    - refactor
+    - test
+    - chore
+    - perf
+    - ci
+    - build
+    - revert
+  type-case: [2, always, lower-case]
+  type-empty: [2, never]
+  subject-empty: [2, never]
+  subject-full-stop: [0]
+  subject-case: [0]
+  header-max-length: [1, always, 100]
+  body-leading-blank: [1, always]
+  body-line-length: [1, always, 100]
+
+parser-preset:
+  parserOpts:
+    headerPattern: '^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([a-z0-9/-]+\))?:\s+(.+)$'
+    headerCorrespondence: [type, scope, subject]
