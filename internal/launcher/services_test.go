@@ -6,8 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
+	"github.com/ts721521/DevToolbox/internal/applog"
 	"github.com/ts721521/DevToolbox/internal/proc"
 	"github.com/ts721521/DevToolbox/internal/registry"
 )
@@ -19,16 +21,34 @@ func withTempHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("APPDATA", dir)
 	t.Setenv("USERPROFILE", dir)
+	t.Cleanup(applog.Close)
+}
+
+func allPlatforms() []string {
+	return []string{"darwin", "linux", "windows"}
+}
+
+func processLive(rec RunRecord, needle string) bool {
+	if needle != "" && len(proc.FindByNeedle(needle)) > 0 {
+		return true
+	}
+	for _, pid := range append(append([]int{}, rec.PIDs...), rec.ServicePIDs...) {
+		if proc.Alive(pid) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLaunchMissingDepend(t *testing.T) {
 	withTempHome(t)
 	tool := registry.Tool{
-		ID:      "front",
-		Name:    "Front",
-		Kind:    "url",
-		URL:     "http://127.0.0.1:9",
-		Depends: []string{"redis"},
+		ID:        "front",
+		Name:      "Front",
+		Kind:      "url",
+		URL:       "http://127.0.0.1:9",
+		Platforms: allPlatforms(),
+		Depends:   []string{"redis"},
 	}
 	if err := registry.Save(tool); err != nil {
 		t.Fatal(err)
@@ -40,8 +60,8 @@ func TestLaunchMissingDepend(t *testing.T) {
 
 func TestLaunchDependCycle(t *testing.T) {
 	withTempHome(t)
-	a := registry.Tool{ID: "a", Name: "A", Kind: "url", URL: "http://127.0.0.1:9", Depends: []string{"b"}}
-	b := registry.Tool{ID: "b", Name: "B", Kind: "url", URL: "http://127.0.0.1:9", Depends: []string{"a"}}
+	a := registry.Tool{ID: "a", Name: "A", Kind: "url", URL: "http://127.0.0.1:9", Platforms: allPlatforms(), Depends: []string{"b"}}
+	b := registry.Tool{ID: "b", Name: "B", Kind: "url", URL: "http://127.0.0.1:9", Platforms: allPlatforms(), Depends: []string{"a"}}
 	if err := registry.Save(a); err != nil {
 		t.Fatal(err)
 	}
@@ -63,11 +83,12 @@ func TestLaunchDependAlreadyRunningStartsServices(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	backend := registry.Tool{
-		ID:      "backend",
-		Name:    "Backend",
-		Kind:    "url",
-		URL:     srv.URL,
-		Workdir: wd,
+		ID:        "backend",
+		Name:      "Backend",
+		Kind:      "url",
+		URL:       srv.URL,
+		Workdir:   wd,
+		Platforms: allPlatforms(),
 		Services: []registry.Service{{
 			Name:         "hold",
 			Command:      script,
@@ -76,11 +97,12 @@ func TestLaunchDependAlreadyRunningStartsServices(t *testing.T) {
 		}},
 	}
 	front := registry.Tool{
-		ID:      "front",
-		Name:    "Front",
-		Kind:    "url",
-		URL:     "http://127.0.0.1:9",
-		Depends: []string{"backend"},
+		ID:        "front",
+		Name:      "Front",
+		Kind:      "url",
+		URL:       "http://127.0.0.1:9",
+		Platforms: allPlatforms(),
+		Depends:   []string{"backend"},
 	}
 	if err := registry.Save(backend); err != nil {
 		t.Fatal(err)
@@ -92,7 +114,7 @@ func TestLaunchDependAlreadyRunningStartsServices(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { stopServices(prepare(backend)) })
-	if n := proc.FindByNeedle(needle); len(n) == 0 {
+	if !processLive(loadRun(backend.ID), needle) {
 		t.Fatal("depend already running should still start its services")
 	}
 }
@@ -134,13 +156,15 @@ func TestStopDoesNotKillDepend(t *testing.T) {
 		Workdir:      wd,
 		Command:      script,
 		ProcessMatch: needle,
+		Platforms:    allPlatforms(),
 	}
 	front := registry.Tool{
-		ID:      "front2",
-		Name:    "Front2",
-		Kind:    "url",
-		URL:     "http://127.0.0.1:9",
-		Depends: []string{"dep"},
+		ID:        "front2",
+		Name:      "Front2",
+		Kind:      "url",
+		URL:       "http://127.0.0.1:9",
+		Platforms: allPlatforms(),
+		Depends:   []string{"dep"},
 	}
 	if err := registry.Save(dep); err != nil {
 		t.Fatal(err)
@@ -152,7 +176,7 @@ func TestStopDoesNotKillDepend(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = Stop(dep) })
-	if n := proc.FindByNeedle(needle); len(n) == 0 {
+	if !processLive(loadRun(dep.ID), needle) {
 		t.Fatal("depend should be running")
 	}
 	if err := Stop(front); err != nil {
@@ -200,11 +224,12 @@ func TestLaunchKindFailureClearsServicePIDs(t *testing.T) {
 	wd := t.TempDir()
 	script, needle := holdScript(t, wd)
 	tool := registry.Tool{
-		ID:      "fail-kind",
-		Name:    "F",
-		Kind:    "command",
-		Workdir: wd,
-		Command: []string{"/no/such/tooldock-bin-xyz"},
+		ID:        "fail-kind",
+		Name:      "F",
+		Kind:      "command",
+		Workdir:   wd,
+		Platforms: allPlatforms(),
+		Command:   []string{"/no/such/tooldock-bin-xyz"},
 		Services: []registry.Service{{
 			Name:         "hold",
 			Command:      script,
@@ -313,20 +338,16 @@ func TestProbeSeesLiveServicePIDs(t *testing.T) {
 
 func holdScript(t *testing.T, dir string) (command []string, needle string) {
 	t.Helper()
+	needle = "hold-" + strings.ReplaceAll(t.Name(), "/", "-")
 	if runtime.GOOS == "windows" {
-		name := "tooldock-hold-test.bat"
-		p := filepath.Join(dir, name)
-		body := "@echo off\r\nping 127.0.0.1 -n 40 >nul\r\n"
-		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		return []string{"cmd", "/c", p}, name
+		line := "ping 127.0.0.1 -n 40>nul & rem " + needle
+		return []string{"cmd", "/c", line}, needle
 	}
-	name := "tooldock-hold-test.sh"
+	name := needle + ".sh"
 	p := filepath.Join(dir, name)
 	body := "#!/bin/sh\nsleep 40\n"
 	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	return []string{p}, name
+	return []string{p}, needle
 }

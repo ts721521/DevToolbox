@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ts721521/DevToolbox/internal/applog"
 	"github.com/ts721521/DevToolbox/internal/registry"
 )
 
@@ -16,6 +17,7 @@ func withTempHome(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("APPDATA", dir)
 	t.Setenv("USERPROFILE", dir)
+	t.Cleanup(applog.Close)
 }
 
 func TestRevealDirMissingTool(t *testing.T) {
@@ -66,7 +68,8 @@ func TestRevealAppWithoutPath(t *testing.T) {
 func TestLaunchMissingDependAPI(t *testing.T) {
 	withTempHome(t)
 	if err := registry.Save(registry.Tool{
-		ID: "front", Name: "Front", Kind: "url", URL: "http://127.0.0.1:9", Depends: []string{"redis"},
+		ID: "front", Name: "Front", Kind: "url", URL: "http://127.0.0.1:9",
+		Platforms: []string{"darwin", "linux", "windows"}, Depends: []string{"redis"},
 	}); err != nil {
 		t.Fatal(err)
 	}
