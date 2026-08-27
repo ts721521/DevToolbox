@@ -104,7 +104,7 @@ jobs:
           if [ ! -s /tmp/rel.md ]; then
             printf '工坞 ToolDock %s\n' "$GITHUB_REF_NAME" > /tmp/rel.md
           fi
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: 工坞 ToolDock ${{ github.ref_name }}
           generate_release_notes: true
