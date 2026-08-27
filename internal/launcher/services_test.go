@@ -182,7 +182,7 @@ func TestStopDoesNotKillDepend(t *testing.T) {
 	if err := Stop(front); err != nil {
 		t.Fatal(err)
 	}
-	if n := proc.FindByNeedle(needle); len(n) == 0 {
+	if !processLive(loadRun(dep.ID), needle) {
 		t.Fatal("stop front must not kill depend")
 	}
 }
@@ -310,6 +310,45 @@ func TestStartAndStopServices(t *testing.T) {
 	stopServices(prepare(tool))
 	if n := proc.FindByNeedle(needle); len(n) > 0 {
 		t.Fatalf("still running: %v", n)
+	}
+}
+
+func TestStopBookmarkDoesNotKillDependProcess(t *testing.T) {
+	withTempHome(t)
+	wd := t.TempDir()
+	script, needle := holdScript(t, wd)
+	dep := registry.Tool{
+		ID:           "dep-bm",
+		Name:         "DepBM",
+		Kind:         "command",
+		Workdir:      wd,
+		Command:      script,
+		ProcessMatch: needle,
+		Platforms:    allPlatforms(),
+	}
+	front := registry.Tool{
+		ID:        "front-bm",
+		Name:      "FrontBM",
+		Kind:      "url",
+		URL:       "http://127.0.0.1:9",
+		Platforms: allPlatforms(),
+		Depends:   []string{"dep-bm"},
+	}
+	if err := registry.Save(dep); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Save(front); err != nil {
+		t.Fatal(err)
+	}
+	if err := launchChain(front, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = Stop(dep) })
+	if err := Stop(front); err != nil {
+		t.Fatal(err)
+	}
+	if !processLive(loadRun(dep.ID), needle) {
+		t.Fatal("closing a url bookmark must not kill its depend")
 	}
 }
 

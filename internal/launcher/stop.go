@@ -273,10 +273,11 @@ func Stop(t registry.Tool) error {
 	if port == 0 {
 		port = proc.LocalListenPort(t.HealthURL)
 	}
-	// Only kill whoever is on this port if it is actually THIS tool
-	// (health match) or the tool has no health fingerprint.
-	includePort := t.HealthContains == ""
-	if !includePort && t.URL != "" {
+	// Only kill whoever is on this port if this tool started a local server.
+	// URL bookmarks (no command / services) must not kill whatever happens
+	// to be listening — including a depend launched for this tool.
+	includePort := t.HealthContains == "" && (len(t.Command) > 0 || len(t.Services) > 0 || t.Kind == "web")
+	if !includePort && t.URL != "" && (len(t.Command) > 0 || len(t.Services) > 0 || t.Kind == "web") {
 		ok, _ := httpOK(t.URL, t.HealthContains)
 		if t.HealthURL != "" {
 			ok, _ = httpOK(t.HealthURL, t.HealthContains)
