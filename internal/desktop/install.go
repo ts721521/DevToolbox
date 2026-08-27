@@ -154,6 +154,10 @@ func writeDarwinBundle(app, execPath string) error {
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticTermination</key><false/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key><true/>
+    </dict>
 </dict>
 </plist>
 `, AppDisplayName, AppDisplayName, AppEnglishName, BundleID, version.Numeric(), version.Numeric(), exeName, version.Display())
@@ -196,7 +200,7 @@ func compileMacLauncher(out string) error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command("clang", "-Os", "-fobjc-arc", "-framework", "Cocoa", "-o", out, src)
+	cmd := exec.Command("clang", "-Os", "-fobjc-arc", "-framework", "Cocoa", "-framework", "WebKit", "-o", out, src)
 	b, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("clang: %w (%s)", err, strings.TrimSpace(string(b)))

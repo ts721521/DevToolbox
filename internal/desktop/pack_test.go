@@ -75,8 +75,8 @@ func TestDarwinBundleHasCocoaLauncher(t *testing.T) {
 	if strings.Contains(string(raw), "LSUIElement") {
 		t.Fatal("Dock icon requires LSUIElement off")
 	}
-	if runtime.GOOS == "darwin" && !strings.Contains(string(raw), "<key>CFBundleExecutable</key><string>ToolDock</string>") {
-		t.Fatalf("expected Cocoa launcher executable, got %s", raw)
+	if runtime.GOOS == "darwin" && !strings.Contains(string(raw), "NSAllowsLocalNetworking") {
+		t.Fatal("WKWebView needs NSAllowsLocalNetworking for http://127.0.0.1")
 	}
 	if _, err := os.Stat(filepath.Join(app, "Contents", "Helpers", BinName)); err != nil {
 		t.Fatal("missing go helper binary")

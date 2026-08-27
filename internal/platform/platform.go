@@ -90,13 +90,50 @@ func openPathOrURL(target string) error {
 	return cmd.Start()
 }
 
+// HubLaunchedByCocoa is true when the Go hub was started by the Mac .app
+// launcher (Contents/Helpers/tooldock). That parent already opens the UI.
+func HubLaunchedByCocoa(exe string) bool {
+	return strings.Contains(filepath.ToSlash(exe), "/Contents/Helpers/")
+}
+
 func OpenInChromeApp(raw string) error {
+	if runtime.GOOS == "darwin" && focusHubWindow() {
+		return nil
+	}
 	chrome := findChrome()
 	if chrome == "" {
 		return OpenURL(raw)
 	}
 	cmd := exec.Command(chrome, "--app="+raw, "--window-size=1080,760")
 	return cmd.Start()
+}
+
+func focusHubWindow() bool {
+	script := `set names to {"Google Chrome", "Microsoft Edge"}
+repeat with appName in names
+	try
+		tell application "System Events"
+			if not (exists process (appName as text)) then error "skip"
+		end tell
+		tell application appName
+			repeat with w in windows
+				try
+					set u to URL of active tab of w
+					if u contains "127.0.0.1:17890" then
+						set index of w to 1
+						activate
+						return "ok"
+					end if
+				end try
+			end repeat
+		end tell
+	end try
+end repeat
+return "no"`
+	cmd := exec.Command("osascript", "-")
+	cmd.Stdin = strings.NewReader(script)
+	out, err := cmd.Output()
+	return err == nil && strings.TrimSpace(string(out)) == "ok"
 }
 
 func findChrome() string {

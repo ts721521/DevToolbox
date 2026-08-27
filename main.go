@@ -132,7 +132,9 @@ func runServe() int {
 	}
 	if handoff {
 		applog.Info("already_running", "url", server.URL(), "version", version.Display())
-		_ = platform.OpenInChromeApp(server.URL())
+		if !platform.HubLaunchedByCocoa(self) {
+			_ = platform.OpenInChromeApp(server.URL())
+		}
 		return 0
 	}
 	sub, err := fs.Sub(webFS, "web")
@@ -153,7 +155,9 @@ func runServe() int {
 		live := server.PeekIdentity()
 		if live.Dock {
 			applog.Info("listen_busy_handoff", "url", server.URL())
-			_ = platform.OpenInChromeApp(server.URL())
+			if !platform.HubLaunchedByCocoa(self) {
+				_ = platform.OpenInChromeApp(server.URL())
+			}
 			return 0
 		}
 		name := live.Name
@@ -171,9 +175,11 @@ func runServe() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	go func() {
-		_ = platform.OpenInChromeApp(server.URL())
-	}()
+	if !platform.HubLaunchedByCocoa(self) {
+		go func() {
+			_ = platform.OpenInChromeApp(server.URL())
+		}()
+	}
 	if err := http.Serve(ln, h); err != nil {
 		applog.Error("listen", "err", err)
 		fmt.Fprintln(os.Stderr, err)

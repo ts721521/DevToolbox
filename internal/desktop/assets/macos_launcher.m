@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <WebKit/WebKit.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <string.h>
@@ -24,27 +25,6 @@ static BOOL hubUp(void) {
 	return ok;
 }
 
-static void openUI(void) {
-	NSURL *url = [NSURL URLWithString:@"http://127.0.0.1:17890"];
-	NSArray<NSString *> *chromes = @[
-		@"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-		@"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-	];
-	for (NSString *bin in chromes) {
-		if (![[NSFileManager defaultManager] isExecutableFileAtPath:bin]) {
-			continue;
-		}
-		NSTask *task = [[NSTask alloc] init];
-		task.executableURL = [NSURL fileURLWithPath:bin];
-		task.arguments = @[ @"--app=http://127.0.0.1:17890", @"--window-size=1080,760" ];
-		NSError *err = nil;
-		if ([task launchAndReturnError:&err]) {
-			return;
-		}
-	}
-	[[NSWorkspace sharedWorkspace] openURL:url];
-}
-
 static void startHub(NSString *goBin) {
 	if (hubUp()) {
 		return;
@@ -66,7 +46,45 @@ static void startHub(NSString *goBin) {
 	[task launchAndReturnError:nil];
 }
 
-static void openUIWhenReady(void) {
+@interface ToolDockApp : NSObject <NSApplicationDelegate, NSWindowDelegate>
+@property(copy) NSString *goBin;
+@property(strong) NSWindow *window;
+@property(strong) WKWebView *webView;
+@end
+
+@implementation ToolDockApp
+
+- (void)ensureWindow {
+	if (self.window) {
+		[self.window makeKeyAndOrderFront:nil];
+		[NSApp activateIgnoringOtherApps:YES];
+		return;
+	}
+	NSRect rect = NSMakeRect(0, 0, 1080, 760);
+	NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable |
+			   NSWindowStyleMaskResizable;
+	NSWindow *win = [[NSWindow alloc] initWithContentRect:rect
+						    styleMask:style
+						      backing:NSBackingStoreBuffered
+							defer:NO];
+	win.title = @"工坞";
+	win.delegate = self;
+	[win center];
+	WKWebView *web = [[WKWebView alloc] initWithFrame:rect];
+	win.contentView = web;
+	self.webView = web;
+	self.window = win;
+	[win makeKeyAndOrderFront:nil];
+	[NSApp activateIgnoringOtherApps:YES];
+}
+
+- (void)loadUI {
+	[self ensureWindow];
+	NSURL *url = [NSURL URLWithString:@"http://127.0.0.1:17890"];
+	[self.webView loadRequest:[NSURLRequest requestWithURL:url]];
+}
+
+- (void)showWhenReady {
 	dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
 		for (int i = 0; i < 25; i++) {
 			if (hubUp()) {
@@ -74,32 +92,42 @@ static void openUIWhenReady(void) {
 			}
 			usleep(200000);
 		}
-		dispatch_async(dispatch_get_main_queue(), ^{ openUI(); });
+		dispatch_async(dispatch_get_main_queue(), ^{ [self loadUI]; });
 	});
 }
 
-@interface ToolDockApp : NSObject <NSApplicationDelegate>
-@property(copy) NSString *goBin;
-@end
-
-@implementation ToolDockApp
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
 	(void)notification;
 	startHub(self.goBin);
-	openUIWhenReady();
+	[self showWhenReady];
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)sender hasVisibleWindows:(BOOL)flag {
 	(void)sender;
-	(void)flag;
 	startHub(self.goBin);
+	if (flag && self.window) {
+		[self.window makeKeyAndOrderFront:nil];
+		[NSApp activateIgnoringOtherApps:YES];
+		return NO;
+	}
 	if (hubUp()) {
-		openUI();
+		[self loadUI];
 	} else {
-		openUIWhenReady();
+		[self showWhenReady];
 	}
 	return NO;
 }
+
+- (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender {
+	(void)sender;
+	return NO;
+}
+
+- (BOOL)windowShouldClose:(NSWindow *)sender {
+	[sender orderOut:nil];
+	return NO;
+}
+
 @end
 
 int main(int argc, const char *argv[]) {

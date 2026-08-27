@@ -7,6 +7,12 @@
 ### 变更
 - PR 合入 `main` 由 GitHub ruleset 强制走 PR + 汇总检查 `CI`；用户同意后任意 AI 用 `gh pr merge --auto` 合并
 
+## [1.2.1] - 2026-08-27
+
+### 修复
+- 再点开工坞只唤起同一个自带窗口，不再每次新开一个 Chrome（v1.2.0 会堆出上百个界面）
+- `.app` 用内置网页窗口显示界面；后台不再自己再弹 Chrome
+
 ## [1.2.0] - 2026-08-27
 
 ### 新增
@@ -68,7 +74,8 @@
 - 一键关闭工具及其后台进程（端口 + 进程匹配）
 - 供其他 AI 阅读的 `AGENTS.md`（源码目录、安装目录、运行中的 `/AGENTS.md`）
 
-[未发布]: https://github.com/ts721521/DevToolbox/compare/v1.2.0...HEAD
+[未发布]: https://github.com/ts721521/DevToolbox/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/ts721521/DevToolbox/releases/tag/v1.2.1
 [1.2.0]: https://github.com/ts721521/DevToolbox/releases/tag/v1.2.0
 [1.1.0]: https://github.com/ts721521/DevToolbox/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ts721521/DevToolbox/releases/tag/v1.0.0
