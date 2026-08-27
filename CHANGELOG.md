@@ -35,7 +35,7 @@
 - 健康检查不跟随跳出 loopback 的 HTTP 重定向；仅 2xx 算就绪
 - 附加服务启动失败后清空残留 `service_pids`
 - `scripts/install.sh` 校验 `SHA256SUMS-vX.Y.Z.txt`
-- macOS 发布构建不再用 `-s` 剥离，避免 dyld 因缺少 LC_UUID 直接 Abort
+- macOS 发布构建写入 `LC_UUID`（`-B gobuildid`），避免 macOS 26 dyld Abort
 - 打开后立刻刷新状态；关闭失败不再把按钮卡死
 - CLI `stop` 不会误杀工坞进程；`:17890` 被其他程序占用时不会误打开
 - 从系统「应用程序」点开工坞时能唤起界面（Cocoa 启动器）

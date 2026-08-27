@@ -43,7 +43,7 @@ jobs:
           [ "$GOOS" = windows ] && EXT=".exe"
           mkdir -p dist
           STRIP="-s -w"
-          [ "$GOOS" = darwin ] && STRIP="-w"
+          [ "$GOOS" = darwin ] && STRIP="-w -B gobuildid"
           LDFLAGS="${STRIP} -X github.com/ts721521/DevToolbox/internal/version.Version=${VERSION} -X github.com/ts721521/DevToolbox/internal/version.Commit=${GITHUB_SHA} -X github.com/ts721521/DevToolbox/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags="$LDFLAGS" -o "dist/tooldock-${GOOS}-${GOARCH}-${VERSION}${EXT}" .
           cp "dist/tooldock-${GOOS}-${GOARCH}-${VERSION}${EXT}" "dist/devtoolbox-${GOOS}-${GOARCH}-${VERSION}${EXT}"
@@ -68,8 +68,9 @@ jobs:
       - name: 构建并封装
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          LDFLAGS="-w -X github.com/ts721521/DevToolbox/internal/version.Version=${VERSION} -X github.com/ts721521/DevToolbox/internal/version.Commit=${GITHUB_SHA} -X github.com/ts721521/DevToolbox/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-w -B gobuildid -X github.com/ts721521/DevToolbox/internal/version.Version=${VERSION} -X github.com/ts721521/DevToolbox/internal/version.Commit=${GITHUB_SHA} -X github.com/ts721521/DevToolbox/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           go build -trimpath -ldflags="$LDFLAGS" -o tooldock .
+          otool -l tooldock | grep -q LC_UUID
           ./tooldock pack --out dist
           rm -rf dist/*.app
           ls -lh dist/
