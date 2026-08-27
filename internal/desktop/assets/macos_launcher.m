@@ -24,25 +24,58 @@ static BOOL hubUp(void) {
 	return ok;
 }
 
+static BOOL focusUI(void) {
+	NSString *src = @"set names to {\"Google Chrome\", \"Microsoft Edge\"}\n"
+			 @"repeat with appName in names\n"
+			 @"try\n"
+			 @"tell application \"System Events\"\n"
+			 @"if not (exists process (appName as text)) then error \"skip\"\n"
+			 @"end tell\n"
+			 @"tell application appName\n"
+			 @"repeat with w in windows\n"
+			 @"try\n"
+			 @"set u to URL of active tab of w\n"
+			 @"if u contains \"127.0.0.1:17890\" then\n"
+			 @"set index of w to 1\n"
+			 @"activate\n"
+			 @"return \"ok\"\n"
+			 @"end if\n"
+			 @"end try\n"
+			 @"end repeat\n"
+			 @"end tell\n"
+			 @"end try\n"
+			 @"end repeat\n"
+			 @"return \"no\"";
+	NSAppleScript *as = [[NSAppleScript alloc] initWithSource:src];
+	NSAppleEventDescriptor *r = [as executeAndReturnError:nil];
+	return r && [[r stringValue] isEqualToString:@"ok"];
+}
+
 static void openUI(void) {
-	NSURL *url = [NSURL URLWithString:@"http://127.0.0.1:17890"];
-	NSArray<NSString *> *chromes = @[
-		@"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-		@"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-	];
-	for (NSString *bin in chromes) {
-		if (![[NSFileManager defaultManager] isExecutableFileAtPath:bin]) {
+	static NSTimeInterval last = 0;
+	NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+	if (now - last < 1.5) {
+		return;
+	}
+	if (focusUI()) {
+		last = now;
+		return;
+	}
+	last = now;
+	NSArray<NSString *> *apps = @[ @"Google Chrome", @"Microsoft Edge" ];
+	for (NSString *app in apps) {
+		NSString *path = [NSString stringWithFormat:@"/Applications/%@.app", app];
+		if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
 			continue;
 		}
 		NSTask *task = [[NSTask alloc] init];
-		task.executableURL = [NSURL fileURLWithPath:bin];
-		task.arguments = @[ @"--app=http://127.0.0.1:17890", @"--window-size=1080,760" ];
-		NSError *err = nil;
-		if ([task launchAndReturnError:&err]) {
+		task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/open"];
+		task.arguments = @[ @"-a", app, @"--args", @"--app=http://127.0.0.1:17890", @"--window-size=1080,760" ];
+		if ([task launchAndReturnError:nil]) {
 			return;
 		}
 	}
-	[[NSWorkspace sharedWorkspace] openURL:url];
+	[[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"http://127.0.0.1:17890"]];
 }
 
 static void startHub(NSString *goBin) {
