@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/ts721521/DevToolbox/internal/platform"
 	"github.com/ts721521/DevToolbox/internal/version"
@@ -18,11 +19,15 @@ const (
 	AppEnglishName = "ToolDock"
 	BundleID       = "com.tooldock.app"
 	BinName        = "tooldock"
+	LauncherName   = "ToolDock"
 	LegacyBinName  = "devtoolbox"
 )
 
 //go:embed assets/icon.png
 var iconPNG []byte
+
+//go:embed assets/macos_launcher.m
+var macLauncherSrc []byte
 
 func Install(execPath string, extra map[string][]byte) (string, error) {
 	desktop, err := platform.DesktopDir()
@@ -68,6 +73,7 @@ func installDarwin(desktop, execPath string) (string, error) {
 		return "", err
 	}
 	app := filepath.Join(appDir, AppDisplayName+".app")
+	stopOldBundle(app)
 	if err := writeDarwinBundle(app, execPath); err != nil {
 		return "", err
 	}
@@ -107,19 +113,27 @@ func writable(dir string) bool {
 }
 
 func writeDarwinBundle(app, execPath string) error {
+	helpers := filepath.Join(app, "Contents", "Helpers")
 	macos := filepath.Join(app, "Contents", "MacOS")
 	res := filepath.Join(app, "Contents", "Resources")
-	for _, d := range []string{macos, res} {
+	for _, d := range []string{macos, res, helpers} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
 	}
-	destBin := filepath.Join(macos, BinName)
+	destBin := filepath.Join(helpers, BinName)
 	if err := copyFile(execPath, destBin); err != nil {
 		return err
 	}
 	if err := os.Chmod(destBin, 0o755); err != nil {
 		return err
+	}
+	exeName := LauncherName
+	if err := compileMacLauncher(filepath.Join(macos, LauncherName)); err != nil {
+		if runtime.GOOS == "darwin" {
+			return fmt.Errorf("mac launcher: %w", err)
+		}
+		exeName = BinName
 	}
 	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -135,13 +149,14 @@ func writeDarwinBundle(app, execPath string) error {
     <key>CFBundleExecutable</key><string>%s</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleIconName</key><string>AppIcon</string>
+    <key>NSHumanReadableCopyright</key><string>ToolDock %s</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSSupportsAutomaticTermination</key><false/>
 </dict>
 </plist>
-`, AppDisplayName, AppDisplayName, AppEnglishName, BundleID, version.Version, version.Version, BinName)
+`, AppDisplayName, AppDisplayName, AppEnglishName, BundleID, version.Numeric(), version.Numeric(), exeName, version.Display())
 	if err := os.WriteFile(filepath.Join(app, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
 		return err
 	}
@@ -153,6 +168,40 @@ func writeDarwinBundle(app, execPath string) error {
 	}
 	_ = exec.Command("xattr", "-cr", app).Run()
 	return nil
+}
+
+func stopOldBundle(app string) {
+	if !strings.Contains(app, ".app") {
+		return
+	}
+	_ = exec.Command("pkill", "-f", filepath.Join(app, "Contents")+"/").Run()
+	time.Sleep(200 * time.Millisecond)
+}
+
+func compileMacLauncher(out string) error {
+	if runtime.GOOS != "darwin" {
+		return fmt.Errorf("not darwin")
+	}
+	if len(macLauncherSrc) == 0 {
+		return fmt.Errorf("missing launcher source")
+	}
+	tmp, err := os.CreateTemp("", "tooldock-launch-*.m")
+	if err != nil {
+		return err
+	}
+	src := tmp.Name()
+	_, err = tmp.Write(macLauncherSrc)
+	_ = tmp.Close()
+	defer os.Remove(src)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("clang", "-Os", "-fobjc-arc", "-framework", "Cocoa", "-o", out, src)
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("clang: %w (%s)", err, strings.TrimSpace(string(b)))
+	}
+	return os.Chmod(out, 0o755)
 }
 
 func makeDesktopShortcut(app, desktop string) error {
@@ -170,6 +219,8 @@ func makeDesktopShortcut(app, desktop string) error {
 
 func refreshLaunchServices(app string) {
 	_ = exec.Command("touch", app).Run()
+	lsregister := "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+	_ = exec.Command(lsregister, "-f", app).Run()
 }
 
 func installWindows(desktop, execPath string) (string, error) {

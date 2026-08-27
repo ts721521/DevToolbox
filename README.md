@@ -28,20 +28,19 @@
 
 | 平台 | 文件 |
 |------|------|
-| macOS Apple Silicon | `devtoolbox-darwin-arm64-vX.Y.Z` |
-| macOS Intel | `devtoolbox-darwin-amd64-vX.Y.Z` |
-| Windows x64 | `devtoolbox-windows-amd64-vX.Y.Z.exe` |
-| Windows ARM | `devtoolbox-windows-arm64-vX.Y.Z.exe` |
-| Linux x64 | `devtoolbox-linux-amd64-vX.Y.Z` |
+| macOS Apple Silicon | `tooldock-darwin-arm64-vX.Y.Z` 或 `ToolDock-vX.Y.Z-macOS-arm64.zip` |
+| macOS Intel | `tooldock-darwin-amd64-vX.Y.Z` |
+| Windows x64 | `tooldock-windows-amd64-vX.Y.Z.exe` |
+| Windows ARM | `tooldock-windows-arm64-vX.Y.Z.exe` |
+| Linux x64 | `tooldock-linux-amd64-vX.Y.Z` |
 
 ```bash
 # macOS 去掉隔离属性后安装
-xattr -d com.apple.quarantine devtoolbox-darwin-arm64-v1.0.0
-chmod +x devtoolbox-darwin-arm64-v1.0.0
-./devtoolbox-darwin-arm64-v1.0.0 install-cli
-./devtoolbox-darwin-arm64-v1.0.0 install-desktop
+xattr -d com.apple.quarantine tooldock-darwin-arm64-v1.2.0
+chmod +x tooldock-darwin-arm64-v1.2.0
+./tooldock-darwin-arm64-v1.2.0 install-cli
+./tooldock-darwin-arm64-v1.2.0 install-desktop
 # 正式安装位置：/Applications/工坞.app ，桌面为快捷方式
-
 ```
 
 已装 `gh` 时：
@@ -56,10 +55,7 @@ chmod +x devtoolbox-darwin-arm64-v1.0.0
 git clone https://github.com/ts721521/DevToolbox.git
 cd DevToolbox
 go test ./...
-go build -o devtoolbox .
-./devtoolbox install-desktop
-./devtoolbox install-cli
-./devtoolbox
+make desktop
 ```
 
 界面：`http://127.0.0.1:17890`（仅本机）。
@@ -72,15 +68,18 @@ devtoolbox register --file .devtoolbox.json
 
 模板见 [`examples/`](./examples/)。完整协议见 [AGENTS.md](./AGENTS.md)。
 
-关闭后台：`devtoolbox stop <id>` 或界面上的「关闭」。
+关闭后台：`tooldock stop <id>` 或界面上的「关闭」。
 打开开发目录：`tooldock dir <id>`。打开原始程序：`tooldock app <id>`。
+主程序还要先起 worker / compose / 数据库时，在 JSON 里写 `services` 或 `depends`，点「打开」会一起启动。
+仓库地址写 `git`，点「仓库」或 `tooldock git <id>` 打开。
+不想再用的工具点「移除」会进垃圾桶并屏蔽，以后扫描 / AI 都不会再注册进来。
 
 ## 发布新版本（维护者）
 
 ```bash
 ./scripts/publish.sh           # 推断下一 PATCH
-./scripts/publish.sh v1.1.0    # 指定版本
-./scripts/publish.sh v1.1.0 -y
+./scripts/publish.sh v1.2.0    # 指定版本
+./scripts/publish.sh v1.2.0 -y
 ```
 
 推送 `v*` tag 后，GitHub Actions 会交叉编译并创建 Release。

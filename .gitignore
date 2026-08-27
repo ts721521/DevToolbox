@@ -1,5 +1,7 @@
 /devtoolbox
 /devtoolbox.exe
+/tooldock
+/tooldock.exe
 /dist/
 *.icns
 *.iconset/

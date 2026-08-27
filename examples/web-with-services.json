@@ -1,12 +1,22 @@
 {
-  "id": "example-web",
-  "name": "示例 Web 控制台",
-  "description": "把 workdir / command / url 改成你的项目",
+  "id": "example-stack",
+  "name": "示例：主程序 + 依赖服务",
+  "description": "打开时先启动 services，再启动本工具。depends 指向已注册的其他工具。",
   "group": "开发",
   "kind": "web",
   "platforms": ["darwin", "windows"],
   "workdir": "/path/to/project",
   "git": "https://github.com/example/project",
+  "depends": ["example-web"],
+  "services": [
+    {
+      "name": "worker",
+      "command": ["python3", "worker.py"],
+      "command_windows": ["python", "worker.py"],
+      "process_match": "worker.py",
+      "wait_ms": 1500
+    }
+  ],
   "command": ["python3", "server.py"],
   "command_windows": ["python", "server.py"],
   "url": "http://localhost:8765",

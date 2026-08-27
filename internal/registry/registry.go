@@ -46,6 +46,31 @@ type Tool struct {
 	WorkdirWindows string            `json:"workdir_windows,omitempty"`
 	AppPathDarwin  string            `json:"app_path_darwin,omitempty"`
 	AppPathWindows string            `json:"app_path_windows,omitempty"`
+	// Git is the project remote (https or git@). Shown as「仓库」in the UI.
+	Git string `json:"git,omitempty"`
+	// Depends are other registered tool IDs started before this tool (if not already running).
+	Depends []string `json:"depends,omitempty"`
+	// Services are extra processes started with this tool (workers, compose, local DB, …).
+	Services []Service `json:"services,omitempty"`
+}
+
+const maxServices = 12
+
+// Service is a sidecar process launched with a tool.
+type Service struct {
+	Name           string            `json:"name,omitempty"`
+	Command        []string          `json:"command,omitempty"`
+	CommandDarwin  []string          `json:"command_darwin,omitempty"`
+	CommandWindows []string          `json:"command_windows,omitempty"`
+	Workdir        string            `json:"workdir,omitempty"`
+	WorkdirDarwin  string            `json:"workdir_darwin,omitempty"`
+	WorkdirWindows string            `json:"workdir_windows,omitempty"`
+	Env            map[string]string `json:"env,omitempty"`
+	Terminal       bool              `json:"terminal,omitempty"`
+	HealthURL      string            `json:"health_url,omitempty"`
+	HealthContains string            `json:"health_contains,omitempty"`
+	ProcessMatch   string            `json:"process_match,omitempty"`
+	WaitMS         int               `json:"wait_ms,omitempty"`
 }
 
 func Dir() (string, error) {
@@ -73,11 +98,19 @@ func EnsureDir() (string, error) {
 }
 
 func pathFor(id string) (string, error) {
+	if !idPattern.MatchString(id) {
+		return "", fmt.Errorf("%w: id %q", ErrInvalid, id)
+	}
 	dir, err := EnsureDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, id+".json"), nil
+	p := filepath.Join(dir, id+".json")
+	rel, err := filepath.Rel(dir, p)
+	if err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("%w: id %q", ErrInvalid, id)
+	}
+	return p, nil
 }
 
 func Validate(t Tool) error {
@@ -86,6 +119,9 @@ func Validate(t Tool) error {
 	}
 	if strings.TrimSpace(t.Name) == "" {
 		return fmt.Errorf("%w: name required", ErrInvalid)
+	}
+	if cleanTabName(t.Group) == TrashTab {
+		return fmt.Errorf("%w: group cannot be %s", ErrInvalid, TrashTab)
 	}
 	kind := strings.ToLower(strings.TrimSpace(t.Kind))
 	if kind == "" {
@@ -99,19 +135,62 @@ func Validate(t Tool) error {
 	if kind == "web" && t.URL == "" {
 		return fmt.Errorf("%w: web tool needs url", ErrInvalid)
 	}
-	if kind == "command" && len(t.Command) == 0 {
+	if kind == "command" && len(t.Command) == 0 && len(t.CommandDarwin) == 0 && len(t.CommandWindows) == 0 {
 		return fmt.Errorf("%w: command tool needs command", ErrInvalid)
 	}
-	if kind == "app" && strings.TrimSpace(t.AppPath) == "" {
+	if kind == "app" && strings.TrimSpace(t.AppPath) == "" && strings.TrimSpace(t.AppPathDarwin) == "" && strings.TrimSpace(t.AppPathWindows) == "" {
 		return fmt.Errorf("%w: app tool needs app_path", ErrInvalid)
 	}
 	if kind == "url" && t.URL == "" {
 		return fmt.Errorf("%w: url tool needs url", ErrInvalid)
 	}
+	if err := CheckHTTPURL(t.URL, "url"); err != nil {
+		return err
+	}
+	if err := CheckLocalHTTPURL(t.HealthURL, "health_url"); err != nil {
+		return err
+	}
 	if kind != "url" && strings.TrimSpace(t.Workdir) == "" {
 		return fmt.Errorf("%w: %s tool needs workdir", ErrInvalid, kind)
 	}
+	if g := strings.TrimSpace(t.Git); g != "" && GitWebURL(g) == "" {
+		return fmt.Errorf("%w: git must be an http(s) or git@ remote", ErrInvalid)
+	}
+	if len(t.Services) > maxServices {
+		return fmt.Errorf("%w: at most %d services", ErrInvalid, maxServices)
+	}
+	for i, s := range t.Services {
+		cmd := s.Command
+		if len(cmd) == 0 {
+			cmd = s.CommandDarwin
+		}
+		if len(cmd) == 0 {
+			cmd = s.CommandWindows
+		}
+		if len(cmd) == 0 {
+			return fmt.Errorf("%w: services[%d] needs command", ErrInvalid, i)
+		}
+		if err := CheckLocalHTTPURL(s.HealthURL, "services.health_url"); err != nil {
+			return err
+		}
+	}
+	for _, id := range t.Depends {
+		if !idPattern.MatchString(id) {
+			return fmt.Errorf("%w: depends id %q", ErrInvalid, id)
+		}
+		if id == t.ID {
+			return fmt.Errorf("%w: tool cannot depend on itself", ErrInvalid)
+		}
+	}
 	return nil
+}
+
+// ExtrasHint reminds registrars that Open only starts what the JSON lists.
+func ExtrasHint(t Tool) string {
+	if len(t.Services) > 0 || len(t.Depends) > 0 {
+		return ""
+	}
+	return "未写 services/depends。点「打开」只会跑本条 command / app / url；同一仓库的 worker、compose、数据库或另一张已注册卡片都不会自动起。需要的话补 JSON 再注册。"
 }
 
 func inferKind(t Tool) string {
@@ -139,7 +218,26 @@ func Normalize(t Tool) Tool {
 	if t.Group == "" {
 		t.Group = DefaultOther
 	}
+	t.Depends = uniqueIDs(t.Depends)
+	t.Git = ScrubGit(t.Git)
 	return t
+}
+
+func uniqueIDs(in []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(in))
+	for _, id := range in {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 func CanonicalOS(s string) string {
@@ -224,10 +322,37 @@ func (t Tool) ForOS(goos string) Tool {
 			t.AppPath = t.AppPathDarwin
 		}
 	}
+	for i := range t.Services {
+		t.Services[i] = t.Services[i].ForOS(goos)
+	}
 	return t
 }
 
+func (s Service) ForOS(goos string) Service {
+	switch CanonicalOS(goos) {
+	case "windows":
+		if len(s.CommandWindows) > 0 {
+			s.Command = s.CommandWindows
+		}
+		if s.WorkdirWindows != "" {
+			s.Workdir = s.WorkdirWindows
+		}
+	case "darwin":
+		if len(s.CommandDarwin) > 0 {
+			s.Command = s.CommandDarwin
+		}
+		if s.WorkdirDarwin != "" {
+			s.Workdir = s.WorkdirDarwin
+		}
+	}
+	return s
+}
+
 func Save(t Tool) error {
+	return saveTool(t, true)
+}
+
+func saveTool(t Tool, blockNew bool) error {
 	t = Normalize(t)
 	if err := Validate(t); err != nil {
 		return err
@@ -235,6 +360,13 @@ func Save(t Tool) error {
 	p, err := pathFor(t.ID)
 	if err != nil {
 		return err
+	}
+	_, statErr := os.Stat(p)
+	exists := statErr == nil
+	if blockNew && !exists {
+		if err := CheckBlocked(t); err != nil {
+			return err
+		}
 	}
 	data, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
@@ -262,7 +394,11 @@ func Get(id string) (Tool, error) {
 	if err := json.Unmarshal(data, &t); err != nil {
 		return Tool{}, err
 	}
-	return Normalize(t), nil
+	t = Normalize(t)
+	if err := Validate(t); err != nil {
+		return Tool{}, err
+	}
+	return t, nil
 }
 
 func Remove(id string) error {
@@ -270,10 +406,26 @@ func Remove(id string) error {
 	if err != nil {
 		return err
 	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s", ErrNotFound, id)
+		}
+		return err
+	}
+	var t Tool
+	if json.Unmarshal(data, &t) != nil || strings.TrimSpace(t.ID) == "" {
+		t.ID = id
+	}
+	t = Normalize(t)
 	if err := os.Remove(p); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", ErrNotFound, id)
 		}
+		return err
+	}
+	if err := Bury(t); err != nil {
+		_ = os.WriteFile(p, data, 0o644)
 		return err
 	}
 	return nil

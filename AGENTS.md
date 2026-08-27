@@ -61,6 +61,11 @@ CLI 不在 PATH 时：
 - `platforms`：`darwin` / `windows`（默认两者都有）
 - Windows 覆盖：`command_windows`、`workdir_windows`、`app_path_windows`
 - `process_match`：关闭时用来找后台进程
+- **`git`**：仓库地址（`https://github.com/org/repo` 或 `git@github.com:org/repo.git`）。界面「仓库」/ `tooldock git <id>` 打开。注册时用 `git remote get-url origin`
+- **`services`**：本工具还要一起拉起的附加进程（worker、`docker compose`、本地 DB…）。点「打开」时**先**启动它们（已在跑的会跳过），再启动主程序。**没写进 JSON 的后台不会自动出现。**
+- **`depends`**：已注册的其他工具 ID（先 `GET /api/tools` 用真实 id，禁止编造）。打开时若对方未运行，会先按同样规则启动它（含它自己的 services）。关闭本工具**不会**关掉这些依赖卡片
+- 一条命令已经把全家带起来（`docker compose up`、`npm run dev:full`、官方 oneclick）时，写在 `command` 即可，不要再拆一份重复的 `services`
+- **垃圾桶**：用户点「移除」会进垃圾桶（`GET /api/blocked`）。这些 id / workdir / git **禁止再注册**。需要时用户可在界面恢复或「允许再注册」
 - 示例里**禁止**写真实家目录或凭据，用 `/path/to/project`
 
 打开 / 关闭：
@@ -69,13 +74,14 @@ CLI 不在 PATH 时：
 tooldock open <id>
 tooldock dir <id>
 tooldock app <id>
+tooldock git <id>
 tooldock stop <id>
 tooldock list
 tooldock version
 tooldock logs
 ```
 
-HTTP：`POST /api/tools/{id}/launch` · `POST /api/tools/{id}/dir` · `POST /api/tools/{id}/app` · `POST /api/tools/{id}/stop` · `GET /api/system` · `GET /api/tabs` · `POST /api/tools/move` · `GET /api/logs`
+HTTP：`POST /api/tools/{id}/launch` · `/dir` · `/app` · `/git` · `/stop` · `GET /api/system` · `GET /api/tabs` · `POST /api/tools/move` · `GET /api/logs`
 
 ## 排障日志
 
@@ -106,5 +112,6 @@ go build -o devtoolbox .
 
 1. 不要把凭据或本机绝对路径提交到 git。
 2. 不要在 `main` 上直接开发功能。
-3. 关闭进程时不得杀掉工具箱自己（`:17890`）。
-4. 先读再改，每个 Go 改动要能 `go test` / `go vet`。
+3. 关闭进程时不得杀掉工具箱自己（`:17890`）；`process_match` 不要写成 `tooldock`。
+4. 工坞只跑一份：再打开唤起已有界面；新版本顶掉旧进程。界面 `running` 含仍活着的 `services`。
+5. 先读再改，每个 Go 改动要能 `go test` / `go vet`。

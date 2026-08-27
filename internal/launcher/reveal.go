@@ -64,3 +64,12 @@ func RevealProgram(t registry.Tool) error {
 	applog.Info("reveal_app", "id", t.ID, "path", p)
 	return platform.OpenPath(p)
 }
+
+func RevealGit(t registry.Tool) error {
+	web := registry.GitWebURL(t.Git)
+	if web == "" {
+		return fmt.Errorf("未注册 git 仓库地址")
+	}
+	applog.Info("reveal_git", "id", t.ID, "url", web)
+	return platform.OpenURL(web)
+}

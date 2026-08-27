@@ -29,13 +29,54 @@
     "workdir_windows": { "type": "string" },
     "workdir_darwin": { "type": "string" },
     "url": { "type": "string" },
-    "health_url": { "type": "string" },
+    "git": { "type": "string", "description": "Git remote URL (https or git@)" },
+    "health_url": { "$ref": "#/$defs/localHttpUrl" },
     "health_contains": { "type": "string" },
     "app_path": { "type": "string" },
     "app_path_windows": { "type": "string" },
     "app_path_darwin": { "type": "string" },
     "terminal": { "type": "boolean" },
     "process_match": { "type": "string" },
-    "stop_command": { "type": "array", "items": { "type": "string" } }
+    "stop_command": { "type": "array", "items": { "type": "string" } },
+    "depends": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
+      "description": "Other registered tool IDs to launch first if they are not already running"
+    },
+    "services": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "required": [],
+        "anyOf": [
+          { "required": ["command"] },
+          { "required": ["command_darwin"] },
+          { "required": ["command_windows"] }
+        ],
+        "properties": {
+          "name": { "type": "string" },
+          "command": { "type": "array", "items": { "type": "string" } },
+          "command_windows": { "type": "array", "items": { "type": "string" } },
+          "command_darwin": { "type": "array", "items": { "type": "string" } },
+          "workdir": { "type": "string" },
+          "workdir_windows": { "type": "string" },
+          "workdir_darwin": { "type": "string" },
+          "env": { "type": "object", "additionalProperties": { "type": "string" } },
+          "terminal": { "type": "boolean" },
+          "health_url": { "$ref": "#/$defs/localHttpUrl" },
+          "health_contains": { "type": "string" },
+          "process_match": { "type": "string" },
+          "wait_ms": { "type": "integer", "minimum": 0, "maximum": 60000 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "localHttpUrl": {
+      "type": "string",
+      "description": "Loopback http(s) health check only (127.0.0.1 / localhost / [::1])",
+      "pattern": "^https?://(127\\.0\\.0\\.1|localhost|\\[::1\\])(:[0-9]+)?(/.*)?$"
+    }
   }
 }

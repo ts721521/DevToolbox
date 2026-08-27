@@ -3,7 +3,6 @@ package proc
 import (
 	"bufio"
 	"fmt"
-	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -20,25 +19,37 @@ func PortFromURL(raw string) int {
 	if err != nil || u.Host == "" {
 		return 0
 	}
-	host := u.Host
-	if strings.HasPrefix(host, "[") {
-		if i := strings.LastIndex(host, "]:"); i >= 0 {
-			p, _ := strconv.Atoi(host[i+2:])
-			return p
-		}
-		return 0
+	if p := u.Port(); p != "" {
+		n, _ := strconv.Atoi(p)
+		return n
 	}
-	_, port, err := net.SplitHostPort(host)
+	if u.Scheme == "https" {
+		return 443
+	}
+	if u.Scheme == "http" {
+		return 80
+	}
+	return 0
+}
+
+// LocalListenPort is the only port Stop/Probe may kill or claim.
+// Requires an explicit port on loopback. Never infers 80/443.
+func LocalListenPort(raw string) int {
+	u, err := url.Parse(raw)
 	if err != nil {
-		if u.Scheme == "https" {
-			return 443
-		}
-		if u.Scheme == "http" {
-			return 80
-		}
 		return 0
 	}
-	p, _ := strconv.Atoi(port)
+	host := strings.ToLower(u.Hostname())
+	if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+		return 0
+	}
+	if u.Port() == "" {
+		return 0
+	}
+	p, err := strconv.Atoi(u.Port())
+	if err != nil || p <= 0 || p == 17890 {
+		return 0
+	}
 	return p
 }
 
@@ -217,6 +228,17 @@ func ParsePS(out, needle string) []int {
 	return parsePS(out, needle)
 }
 
+func skipHubLine(cmdline, needle string) bool {
+	cl := strings.ToLower(cmdline)
+	n := strings.ToLower(needle)
+	for _, hub := range []string{"tooldock", "devtoolbox"} {
+		if strings.Contains(cl, hub) && !strings.Contains(n, hub) {
+			return true
+		}
+	}
+	return false
+}
+
 func parsePS(out, needle string) []int {
 	self := strconv.Itoa(SelfPID())
 	var pids []int
@@ -233,7 +255,7 @@ func parsePS(out, needle string) []int {
 		if pidStr == self {
 			continue
 		}
-		if strings.Contains(rest, "devtoolbox") && !strings.Contains(needle, "devtoolbox") {
+		if skipHubLine(rest, needle) {
 			continue
 		}
 		pid, err := strconv.Atoi(pidStr)
@@ -246,13 +268,37 @@ func parsePS(out, needle string) []int {
 }
 
 func findWindows(needle string) []int {
-	q := strings.ReplaceAll(needle, "'", "''")
-	ps := fmt.Sprintf(`Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*%s*' } | Select-Object -ExpandProperty ProcessId`, q)
+	needle = strings.TrimSpace(needle)
+	if needle == "" {
+		return nil
+	}
+	// Filter in Go so the needle never enters a PowerShell string.
+	ps := `Get-CimInstance Win32_Process | ForEach-Object { '{0}\t{1}' -f $_.ProcessId, $_.CommandLine }`
 	out, err := exec.Command("powershell", "-NoProfile", "-Command", ps).Output()
 	if err != nil {
 		return nil
 	}
-	return parsePIDLines(string(out))
+	var pids []int
+	self := strconv.Itoa(SelfPID())
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		pidStr, rest, ok := strings.Cut(line, "\t")
+		if !ok || pidStr == self {
+			continue
+		}
+		if !strings.Contains(rest, needle) {
+			continue
+		}
+		if skipHubLine(rest, needle) {
+			continue
+		}
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	return pids
 }
 
 func windowsAlive(pid int) bool {

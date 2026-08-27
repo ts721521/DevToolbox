@@ -24,7 +24,7 @@ func TestMoveToolsAPI(t *testing.T) {
 	}
 	h := Handler(nil, Options{})
 	body, _ := json.Marshal(map[string]any{"ids": []string{"x"}, "group": "财务"})
-	req := httptest.NewRequest(http.MethodPost, "/api/tools/move", bytes.NewReader(body))
+	req := hubRequest(http.MethodPost, "/api/tools/move", bytes.NewReader(body))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -46,7 +46,7 @@ func TestTabsRenameAndDeleteAPI(t *testing.T) {
 	h := Handler(nil, Options{})
 
 	add, _ := json.Marshal(map[string]string{"name": "临时"})
-	req := httptest.NewRequest(http.MethodPost, "/api/tabs", bytes.NewReader(add))
+	req := hubRequest(http.MethodPost, "/api/tabs", bytes.NewReader(add))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -54,21 +54,21 @@ func TestTabsRenameAndDeleteAPI(t *testing.T) {
 	}
 
 	rename, _ := json.Marshal(map[string]string{"from": "临时", "to": "临时二"})
-	req = httptest.NewRequest(http.MethodPost, "/api/tabs/rename", bytes.NewReader(rename))
+	req = hubRequest(http.MethodPost, "/api/tabs/rename", bytes.NewReader(rename))
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "临时二") {
 		t.Fatalf("rename status %d body=%s", rr.Code, rr.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/tabs/"+url.PathEscape("临时二")+"?move="+url.QueryEscape("其他"), nil)
+	req = hubRequest(http.MethodDelete, "/api/tabs/"+url.PathEscape("临时二")+"?move="+url.QueryEscape("其他"), nil)
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("delete status %d body=%s", rr.Code, rr.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/tabs/"+url.PathEscape("不存在"), nil)
+	req = hubRequest(http.MethodDelete, "/api/tabs/"+url.PathEscape("不存在"), nil)
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	if rr.Code != http.StatusNotFound {

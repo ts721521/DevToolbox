@@ -2,6 +2,24 @@ package proc
 
 import "testing"
 
+func TestLocalListenPort(t *testing.T) {
+	if LocalListenPort("http://localhost:8765/") != 8765 {
+		t.Fatal("8765")
+	}
+	if LocalListenPort("http://127.0.0.1:17890") != 0 {
+		t.Fatal("hub port must not be killable")
+	}
+	if LocalListenPort("http://localhost") != 0 {
+		t.Fatal("no inferred 80")
+	}
+	if LocalListenPort("https://github.com") != 0 {
+		t.Fatal("no inferred 443")
+	}
+	if LocalListenPort("https://example.com:443") != 0 {
+		t.Fatal("remote 443 must not be killable")
+	}
+}
+
 func TestPortFromURL(t *testing.T) {
 	if PortFromURL("http://localhost:8765/") != 8765 {
 		t.Fatal("8765")
@@ -32,5 +50,17 @@ func TestDistinctiveNeedle(t *testing.T) {
 	}
 	if DistinctiveNeedle([]string{"python3"}) != "" {
 		t.Fatal("bare python should be empty")
+	}
+}
+
+func TestParsePSSkipsHubProcess(t *testing.T) {
+	out := "100 /Applications/工坞.app/Contents/MacOS/tooldock\n200 python3 myserver.py\n300 /usr/local/bin/devtoolbox\n"
+	got := ParsePS(out, "python3")
+	if len(got) != 1 || got[0] != 200 {
+		t.Fatalf("got %v", got)
+	}
+	got = ParsePS(out, "tooldock")
+	if len(got) != 1 || got[0] != 100 {
+		t.Fatalf("explicit tooldock needle: %v", got)
 	}
 }

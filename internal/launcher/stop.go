@@ -16,10 +16,11 @@ import (
 )
 
 type RunRecord struct {
-	ID        string    `json:"id"`
-	PIDs      []int     `json:"pids,omitempty"`
-	Port      int       `json:"port,omitempty"`
-	StartedAt time.Time `json:"started_at"`
+	ID          string    `json:"id"`
+	PIDs        []int     `json:"pids,omitempty"`
+	Port        int       `json:"port,omitempty"`
+	StartedAt   time.Time `json:"started_at"`
+	ServicePIDs []int     `json:"service_pids,omitempty"`
 }
 
 func runDir() (string, error) {
@@ -65,6 +66,70 @@ func clearRun(id string) {
 }
 
 func Launch(t registry.Tool) error {
+	if err := registry.Validate(registry.Normalize(t)); err != nil {
+		return err
+	}
+	return launchChain(t, true, nil)
+}
+
+func launchChain(t registry.Tool, openUI bool, stack []string) error {
+	t = prepare(t)
+	if err := registry.CheckHTTPURL(t.URL, "url"); err != nil {
+		return err
+	}
+	if err := registry.CheckLocalHTTPURL(t.HealthURL, "health_url"); err != nil {
+		return err
+	}
+	for i, s := range t.Services {
+		if err := registry.CheckLocalHTTPURL(s.HealthURL, "services.health_url"); err != nil {
+			return fmt.Errorf("services[%d]: %w", i, err)
+		}
+	}
+	if !t.Supports(runtime.GOOS) {
+		err := fmt.Errorf("「%s」不支持当前系统 %s（支援：%s）", t.Name, registry.PlatformLabel(runtime.GOOS), labels(t.Platforms))
+		applog.Warn("launch_skip", "id", t.ID, "err", err)
+		return err
+	}
+	for _, id := range stack {
+		if id == t.ID {
+			return fmt.Errorf("依赖循环：%s", strings.Join(append(append([]string{}, stack...), t.ID), " → "))
+		}
+	}
+	stack = append(append([]string{}, stack...), t.ID)
+
+	for _, depID := range t.Depends {
+		dep, err := registry.Get(depID)
+		if err != nil {
+			return fmt.Errorf("依赖「%s」未注册：%w", depID, err)
+		}
+		if Probe(dep).Running {
+			applog.Info("dep_already", "id", t.ID, "dep", depID)
+			if err := startServices(prepare(dep)); err != nil {
+				return fmt.Errorf("启动依赖「%s」的附加服务失败：%w", dep.Name, err)
+			}
+			continue
+		}
+		applog.Info("dep_launch", "id", t.ID, "dep", depID)
+		if err := launchChain(dep, false, stack); err != nil {
+			return fmt.Errorf("启动依赖「%s」失败：%w", dep.Name, err)
+		}
+	}
+
+	if err := startServices(t); err != nil {
+		return err
+	}
+
+	applog.Info("launch_begin", "id", t.ID, "kind", t.Kind, "workdir", t.Workdir, "url", t.URL, "app", t.AppPath, "open_ui", openUI)
+	if err := launchKind(t, openUI); err != nil {
+		applog.Error("launch_end", "id", t.ID, "err", err)
+		rollbackServices(t, nil)
+		return err
+	}
+	applog.Info("launch_ok", "id", t.ID)
+	return nil
+}
+
+func prepare(t registry.Tool) registry.Tool {
 	t = t.ForOS(runtime.GOOS)
 	t.Workdir = platform.Expand(t.Workdir)
 	t.URL = platform.Expand(t.URL)
@@ -73,32 +138,43 @@ func Launch(t registry.Tool) error {
 	for i, c := range t.Command {
 		t.Command[i] = platform.Expand(c)
 	}
-	if !t.Supports(runtime.GOOS) {
-		err := fmt.Errorf("「%s」不支持当前系统 %s（支援：%s）", t.Name, registry.PlatformLabel(runtime.GOOS), labels(t.Platforms))
-		applog.Warn("launch_skip", "id", t.ID, "err", err)
-		return err
+	for i := range t.Services {
+		s := t.Services[i]
+		s.Workdir = platform.Expand(s.Workdir)
+		if s.Workdir == "" {
+			s.Workdir = t.Workdir
+		}
+		s.HealthURL = platform.Expand(s.HealthURL)
+		for j, c := range s.Command {
+			s.Command[j] = platform.Expand(c)
+		}
+		t.Services[i] = s
 	}
+	return t
+}
 
-	applog.Info("launch_begin", "id", t.ID, "kind", t.Kind, "workdir", t.Workdir, "url", t.URL, "app", t.AppPath)
-	var err error
+func launchKind(t registry.Tool, openUI bool) error {
 	switch t.Kind {
 	case "url":
-		err = platform.OpenURL(t.URL)
+		if !openUI {
+			return nil
+		}
+		return platform.OpenURL(t.URL)
 	case "app":
-		err = platform.OpenPath(t.AppPath)
+		if !openUI && Probe(t).Running {
+			return nil
+		}
+		return platform.OpenPath(t.AppPath)
 	case "command":
-		err = launchCommand(t)
+		if Probe(t).Running {
+			return nil
+		}
+		return launchCommand(t)
 	case "web":
-		err = launchWeb(t)
+		return launchWeb(t, openUI)
 	default:
-		err = fmt.Errorf("unknown kind %q", t.Kind)
+		return fmt.Errorf("unknown kind %q", t.Kind)
 	}
-	if err != nil {
-		applog.Error("launch_end", "id", t.ID, "err", err)
-		return err
-	}
-	applog.Info("launch_ok", "id", t.ID)
-	return nil
 }
 
 func launchCommand(t registry.Tool) error {
@@ -118,12 +194,15 @@ func launchCommand(t registry.Tool) error {
 	return nil
 }
 
-func launchWeb(t registry.Tool) error {
+func launchWeb(t registry.Tool, openUI bool) error {
 	st := Probe(t)
 	if st.Running {
-		return platform.OpenURL(t.URL)
+		if openUI {
+			return platform.OpenURL(t.URL)
+		}
+		return nil
 	}
-	port := proc.PortFromURL(t.URL)
+	port := proc.LocalListenPort(t.URL)
 	if occupied, who := portBusy(t.URL); occupied && !st.Running {
 		listeners := proc.PIDsOnPort(port)
 		if len(listeners) > 0 {
@@ -143,15 +222,22 @@ func launchWeb(t registry.Tool) error {
 		}
 		_ = waitHealthy(t, 25*time.Second)
 		saveCollected(t, startedPID)
+		if openUI {
+			return platform.OpenURL(t.URL)
+		}
+		return nil
+	}
+	if openUI {
 		return platform.OpenURL(t.URL)
 	}
-	return platform.OpenURL(t.URL)
+	return nil
 }
 
 func saveCollected(t registry.Tool, extraPID int) {
-	port := proc.PortFromURL(t.URL)
+	prev := loadRun(t.ID)
+	port := proc.LocalListenPort(t.URL)
 	if port == 0 {
-		port = proc.PortFromURL(t.HealthURL)
+		port = proc.LocalListenPort(t.HealthURL)
 	}
 	pids := []int{}
 	if extraPID > 0 {
@@ -161,15 +247,18 @@ func saveCollected(t registry.Tool, extraPID int) {
 	if n := needle(t); n != "" {
 		pids = append(pids, proc.FindByNeedle(n)...)
 	}
-	saveRun(RunRecord{ID: t.ID, PIDs: uniqueInts(pids), Port: port, StartedAt: time.Now()})
+	saveRun(RunRecord{
+		ID:          t.ID,
+		PIDs:        uniqueInts(pids),
+		Port:        port,
+		StartedAt:   time.Now(),
+		ServicePIDs: prev.ServicePIDs,
+	})
 }
 
 func Stop(t registry.Tool) error {
 	applog.Info("stop_begin", "id", t.ID, "kind", t.Kind, "name", t.Name)
-	t = t.ForOS(runtime.GOOS)
-	t.Workdir = platform.Expand(t.Workdir)
-	t.URL = platform.Expand(t.URL)
-	t.AppPath = platform.Expand(t.AppPath)
+	t = prepare(t)
 
 	if len(t.StopCommand) > 0 {
 		_, _ = platform.StartDetached(t.Workdir, t.StopCommand, t.Env)
@@ -180,17 +269,15 @@ func Stop(t registry.Tool) error {
 	var pids []int
 	pids = append(pids, rec.PIDs...)
 
-	port := rec.Port
+	port := proc.LocalListenPort(t.URL)
 	if port == 0 {
-		port = proc.PortFromURL(t.URL)
+		port = proc.LocalListenPort(t.HealthURL)
 	}
-	if port == 17890 {
-		port = 0 // never kill the hub
-	}
-	// Only kill whoever is on this port if it is actually THIS tool
-	// (health match) or the tool has no health fingerprint.
-	includePort := t.HealthContains == ""
-	if !includePort && t.URL != "" {
+	// Only kill whoever is on this port if this tool started a local server.
+	// URL bookmarks (no command / services) must not kill whatever happens
+	// to be listening — including a depend launched for this tool.
+	includePort := t.HealthContains == "" && (len(t.Command) > 0 || len(t.Services) > 0 || t.Kind == "web")
+	if !includePort && t.URL != "" && (len(t.Command) > 0 || len(t.Services) > 0 || t.Kind == "web") {
 		ok, _ := httpOK(t.URL, t.HealthContains)
 		if t.HealthURL != "" {
 			ok, _ = httpOK(t.HealthURL, t.HealthContains)
@@ -218,6 +305,7 @@ func Stop(t registry.Tool) error {
 			time.Sleep(150 * time.Millisecond)
 		}
 	}
+	stopServices(t)
 	clearRun(t.ID)
 	applog.Info("stop_ok", "id", t.ID, "killed", killed, "port", port)
 	return nil
@@ -266,11 +354,11 @@ func ownPIDs(t registry.Tool, includePort bool) []int {
 		pids = append(pids, proc.FindByNeedle(n)...)
 	}
 	if includePort {
-		port := rec.Port
+		port := proc.LocalListenPort(t.URL)
 		if port == 0 {
-			port = proc.PortFromURL(t.URL)
+			port = proc.LocalListenPort(t.HealthURL)
 		}
-		if port > 0 && port != 17890 {
+		if port > 0 {
 			pids = append(pids, proc.PIDsOnPort(port)...)
 		}
 	}
@@ -281,17 +369,4 @@ func ownPIDs(t registry.Tool, includePort bool) []int {
 		}
 	}
 	return live
-}
-
-func CollectedPIDs(t registry.Tool) []int {
-	u := t.HealthURL
-	if u == "" {
-		u = t.URL
-	}
-	includePort := u == ""
-	if u != "" {
-		ok, _ := httpOK(u, t.HealthContains)
-		includePort = ok || t.HealthContains == ""
-	}
-	return ownPIDs(t, includePort)
 }

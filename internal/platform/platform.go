@@ -23,8 +23,17 @@ func OpenURL(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("empty url")
 	}
-	if _, err := url.ParseRequestURI(raw); err != nil {
+	u, err := url.ParseRequestURI(raw)
+	if err != nil {
 		return fmt.Errorf("bad url %q: %w", raw, err)
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("url scheme %q not allowed", u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("bad url %q", raw)
 	}
 	return openPathOrURL(raw)
 }
