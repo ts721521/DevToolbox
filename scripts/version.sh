@@ -20,5 +20,9 @@ else
 fi
 COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
+# Darwin: do not pass -s. It can strip LC_UUID and dyld aborts the binary (Abort trap 6).
+_goos="${GOOS:-$(go env GOOS 2>/dev/null || true)}"
+_strip="-s -w"
+[ "$_goos" = darwin ] && _strip="-w"
+LDFLAGS="${_strip} -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
 export VERSION COMMIT DATE LDFLAGS PKG ROOT
