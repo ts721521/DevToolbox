@@ -17,24 +17,14 @@ jobs:
         include:
           - goos: darwin
             goarch: arm64
-            artifact: devtoolbox-darwin-arm64
-            ext: ""
           - goos: darwin
             goarch: amd64
-            artifact: devtoolbox-darwin-amd64
-            ext: ""
           - goos: windows
             goarch: amd64
-            artifact: devtoolbox-windows-amd64
-            ext: ".exe"
           - goos: windows
             goarch: arm64
-            artifact: devtoolbox-windows-arm64
-            ext: ".exe"
           - goos: linux
             goarch: amd64
-            artifact: devtoolbox-linux-amd64
-            ext: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -49,19 +39,46 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          OUT="${{ matrix.artifact }}-${VERSION}${{ matrix.ext }}"
-          go build -trimpath -ldflags="-s -w -X github.com/ts721521/DevToolbox/internal/version.Version=${VERSION} -X github.com/ts721521/DevToolbox/internal/version.Commit=${GITHUB_SHA} -X github.com/ts721521/DevToolbox/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o "$OUT" .
-          ls -lh "$OUT"
-          echo "ASSET=$OUT" >> "$GITHUB_ENV"
+          EXT=""
+          [ "$GOOS" = windows ] && EXT=".exe"
+          mkdir -p dist
+          LDFLAGS="-s -w -X github.com/ts721521/DevToolbox/internal/version.Version=${VERSION} -X github.com/ts721521/DevToolbox/internal/version.Commit=${GITHUB_SHA} -X github.com/ts721521/DevToolbox/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath -ldflags="$LDFLAGS" -o "dist/tooldock-${GOOS}-${GOARCH}-${VERSION}${EXT}" .
+          cp "dist/tooldock-${GOOS}-${GOARCH}-${VERSION}${EXT}" "dist/devtoolbox-${GOOS}-${GOARCH}-${VERSION}${EXT}"
+          if [ "$GOOS" = windows ]; then
+            cp "dist/tooldock-${GOOS}-${GOARCH}-${VERSION}${EXT}" "dist/ToolDock-${VERSION}-windows-${GOARCH}.exe"
+          fi
+          ls -lh dist/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ASSET }}
-          path: ${{ env.ASSET }}
+          name: tooldock-${{ matrix.goos }}-${{ matrix.goarch }}-${{ github.ref_name }}
+          path: dist/*
+
+  pack-macos:
+    name: 封装 macOS App
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: 构建并封装
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          LDFLAGS="-s -w -X github.com/ts721521/DevToolbox/internal/version.Version=${VERSION} -X github.com/ts721521/DevToolbox/internal/version.Commit=${GITHUB_SHA} -X github.com/ts721521/DevToolbox/internal/version.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          go build -trimpath -ldflags="$LDFLAGS" -o tooldock .
+          ./tooldock pack --out dist
+          rm -rf dist/*.app
+          ls -lh dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ToolDock-${{ github.ref_name }}-macOS-app
+          path: dist/*.zip
 
   release:
     name: 发布 Release
-    needs: build
+    needs: [build, pack-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,11 +86,26 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - run: ls -lh dist/
+      - name: 校验和与发行说明
+        run: |
+          ls -lh dist/
+          cd dist
+          sha256sum $(ls -1 | grep -v '^SHA256SUMS-') > "SHA256SUMS-${GITHUB_REF_NAME}.txt"
+          cd ..
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VER" '
+            $0 ~ "^## \\[" ver "\\]" {p=1; print; next}
+            p && /^## / {exit}
+            p {print}
+          ' CHANGELOG.md > /tmp/rel.md
+          if [ ! -s /tmp/rel.md ]; then
+            printf '工坞 ToolDock %s\n' "$GITHUB_REF_NAME" > /tmp/rel.md
+          fi
       - uses: softprops/action-gh-release@v2
         with:
+          name: 工坞 ToolDock ${{ github.ref_name }}
           generate_release_notes: true
           files: dist/*
-          body_path: CHANGELOG.md
+          body_path: /tmp/rel.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

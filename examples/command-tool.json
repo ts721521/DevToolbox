@@ -5,6 +5,7 @@
   "kind": "command",
   "platforms": ["darwin", "windows"],
   "workdir": "/path/to/project",
+  "git": "https://github.com/example/project",
   "command": ["python3", "app.py"],
   "command_windows": ["python", "app.py"],
   "process_match": "app.py",

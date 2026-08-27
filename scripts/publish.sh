@@ -14,7 +14,7 @@ for arg in "$@"; do
 done
 
 echo "════════════════════════════════════════"
-echo "  DevToolbox 发布"
+echo "  工坞 ToolDock 发布"
 echo "════════════════════════════════════════"
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -50,7 +50,18 @@ if git rev-parse "$VERSION" >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! grep -qE "^## \\[${VERSION#v}\\]" CHANGELOG.md; then
+  echo "✗ CHANGELOG.md 缺少 ## [${VERSION#v}] 段落，先把「未发布」挪过去"
+  exit 1
+fi
+SRC_VER=$(sed -n 's/^[[:space:]]*Version = "\([^"]*\)".*/\1/p' internal/version/version.go | head -1)
+if [ "v${SRC_VER#v}" != "$VERSION" ] && [ "$SRC_VER" != "${VERSION#v}" ]; then
+  echo "✗ internal/version.Version=$SRC_VER 与 tag $VERSION 不一致"
+  exit 1
+fi
+
 echo "即将发布 $VERSION"
+echo "  产物将包含：tooldock-*-$VERSION 、devtoolbox-*-$VERSION 、macOS App zip"
 if [ "$ASSUME_YES" = false ]; then
   read -r -p "确认发布? (y/N) " confirm
   [ "$confirm" = "y" ] || exit 0

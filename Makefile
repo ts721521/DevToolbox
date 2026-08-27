@@ -1,4 +1,4 @@
-.PHONY: test vet build fmt tidy windows desktop
+.PHONY: test vet build fmt tidy windows desktop pack
 
 test:
 	go test ./...
@@ -7,17 +7,19 @@ vet:
 	go vet ./...
 
 fmt:
-	go fmt ./...
+	gofmt -w .
 
 build:
-	go build -o devtoolbox .
+	./scripts/build.sh
+
+pack: build
+	@BIN=$$(ls -1 dist/tooldock-$$(go env GOOS)-$$(go env GOARCH)-* | head -1); \
+	"$$BIN" pack --out dist
 
 windows:
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/devtoolbox-windows-amd64.exe .
-
-tidy:
-	go mod tidy
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 ./scripts/build.sh
 
 desktop: build
-	./devtoolbox install-desktop
-	./devtoolbox install-cli
+	@BIN=$$(ls -1 dist/tooldock-$$(go env GOOS)-$$(go env GOARCH)-* | head -1); \
+	"$$BIN" install-desktop; \
+	"$$BIN" install-cli

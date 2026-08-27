@@ -6,6 +6,7 @@
   "kind": "app",
   "platforms": ["darwin", "windows"],
   "workdir": "/path/to/project",
+  "git": "https://github.com/example/project",
   "app_path": "/Applications/Example.app",
   "app_path_windows": "C:\\\\Program Files\\\\Example\\\\example.exe"
 }

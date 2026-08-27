@@ -50,6 +50,9 @@ func uniqueTabs(in []string) []string {
 		if n == "" {
 			continue
 		}
+		if n == TrashTab {
+			continue
+		}
 		if _, ok := seen[n]; ok {
 			continue
 		}
@@ -169,6 +172,9 @@ func AddTab(name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("%w: tab name required", ErrInvalid)
 	}
+	if name == TrashTab {
+		return "", fmt.Errorf("%w: %s is not a tab", ErrInvalid, TrashTab)
+	}
 	cur := LoadTabs()
 	for _, n := range cur {
 		if n == name {
@@ -187,8 +193,11 @@ func RenameTab(from, to string) error {
 	if from == "" || to == "" {
 		return fmt.Errorf("%w: tab name required", ErrInvalid)
 	}
-	if from == DefaultOther {
-		return fmt.Errorf("%w: cannot rename %s", ErrInvalid, DefaultOther)
+	if from == DefaultOther || from == TrashTab {
+		return fmt.Errorf("%w: cannot rename %s", ErrInvalid, from)
+	}
+	if to == TrashTab {
+		return fmt.Errorf("%w: %s is not a tab", ErrInvalid, TrashTab)
 	}
 	if from == to {
 		return nil
@@ -230,8 +239,8 @@ func RemoveTab(name, moveTo string) error {
 	if name == "" {
 		return fmt.Errorf("%w: tab name required", ErrInvalid)
 	}
-	if name == DefaultOther {
-		return fmt.Errorf("%w: cannot delete %s", ErrInvalid, DefaultOther)
+	if name == DefaultOther || name == TrashTab {
+		return fmt.Errorf("%w: cannot delete %s", ErrInvalid, name)
 	}
 	moveTo = cleanTabName(moveTo)
 	if moveTo == "" || moveTo == name {

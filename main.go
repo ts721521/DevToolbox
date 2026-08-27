@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -62,20 +63,30 @@ func main() {
 		os.Exit(runRevealDir(args[1:]))
 	case "app":
 		os.Exit(runRevealApp(args[1:]))
+	case "git", "repo":
+		os.Exit(runRevealGit(args[1:]))
 	case "stop", "kill":
 		os.Exit(runStop(args[1:]))
 	case "register":
 		os.Exit(runRegister(args[1:]))
 	case "unregister", "rm":
 		os.Exit(runUnregister(args[1:]))
+	case "restore":
+		os.Exit(runRestore(args[1:]))
+	case "blocked", "trash":
+		os.Exit(runBlocked())
+	case "unblock":
+		os.Exit(runUnblock(args[1:]))
 	case "install-desktop":
 		os.Exit(runInstallDesktop())
 	case "install-cli":
 		os.Exit(runInstallCLI())
+	case "pack":
+		os.Exit(runPack(args[1:]))
 	case "logs":
 		os.Exit(runLogs())
 	case "version", "-v", "--version":
-		fmt.Printf("devtoolbox %s commit=%s date=%s\n", version.Version, version.Commit, version.Date)
+		fmt.Printf("工坞 ToolDock %s\ncommit %s\ndate %s\n", version.Display(), version.Commit, version.Date)
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -86,18 +97,23 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Printf("工坞 ToolDock %s — macOS / Windows 本地工具启动器\n\n", version.Version)
+	fmt.Printf("工坞 ToolDock %s — macOS / Windows 本地工具启动器\n\n", version.Display())
 	fmt.Print(`用法:
   tooldock                       打开界面
   tooldock list                  列出已注册工具
-  tooldock open <id>             启动某个工具
+  tooldock open <id>             启动某个工具（含 depends / services）
   tooldock dir <id>              打开开发目录（访达 / 资源管理器）
   tooldock app <id>              打开原始程序（.app / .exe）
+  tooldock git <id>              打开 Git 仓库页
   tooldock stop <id>             关闭工具并杀掉后台进程
   tooldock register --file f     从 JSON 注册
-  tooldock unregister <id>       移除注册
+  tooldock unregister <id>       移到垃圾桶（以后不会再被注册）
+  tooldock blocked               列出垃圾桶
+  tooldock restore <id>          从垃圾桶恢复
+  tooldock unblock <id>          取消屏蔽（允许以后再注册）
   tooldock install-desktop       安装到「应用程序」并在桌面创建快捷方式
   tooldock install-cli           安装命令行到 ~/bin
+  tooldock pack [--out dist]     封装带版本号的安装包
   tooldock version               显示版本
   tooldock logs                  显示日志路径并打印最近记录
 
@@ -107,8 +123,15 @@ func printHelp() {
 
 func runServe() int {
 	_ = docs.Publish(guideFiles())
-	if server.AlreadyRunning() {
-		applog.Info("already_running", "url", server.URL())
+	self, _ := desktop.SelfPath()
+	handoff, err := server.ClaimHub(self, version.Display(), version.Commit)
+	if err != nil {
+		applog.Error("claim_hub", "err", err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if handoff {
+		applog.Info("already_running", "url", server.URL(), "version", version.Display())
 		_ = platform.OpenInChromeApp(server.URL())
 		return 0
 	}
@@ -118,17 +141,40 @@ func runServe() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	go func() {
-		_ = platform.OpenInChromeApp(server.URL())
-	}()
 	logFile, _ := applog.Path()
-	applog.Info("serve", "url", server.URL(), "version", version.Version, "log", logFile)
+	applog.Info("serve", "url", server.URL(), "version", version.Display(), "log", logFile)
 	fmt.Println("工坞 ToolDock", server.URL())
 	if logFile != "" {
 		fmt.Println("日志", logFile)
 	}
 	h := server.Handler(http.FileServer(http.FS(sub)), server.Options{Guides: guideFiles()})
-	if err := http.ListenAndServe(server.Addr, h); err != nil {
+	ln, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		live := server.PeekIdentity()
+		if live.Dock {
+			applog.Info("listen_busy_handoff", "url", server.URL())
+			_ = platform.OpenInChromeApp(server.URL())
+			return 0
+		}
+		name := live.Name
+		if name == "" {
+			name = "unknown"
+		}
+		msg := fmt.Sprintf("%s 已被其他程序占用（%s）", server.Addr, name)
+		applog.Error("listen", "err", msg)
+		fmt.Fprintln(os.Stderr, msg)
+		return 1
+	}
+	if err := server.WriteLock(self, version.Display(), version.Commit); err != nil {
+		_ = ln.Close()
+		applog.Error("hub_lock", "err", err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	go func() {
+		_ = platform.OpenInChromeApp(server.URL())
+	}()
+	if err := http.Serve(ln, h); err != nil {
 		applog.Error("listen", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		return 1
@@ -147,7 +193,7 @@ func runList() int {
 		return 0
 	}
 	for _, t := range tools {
-		st := launcher.Probe(t)
+		st := launcher.Alive(t)
 		state := "stop"
 		if st.Running {
 			state = "run "
@@ -208,6 +254,23 @@ func runRevealApp(args []string) int {
 	return 0
 }
 
+func runRevealGit(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: tooldock git <id>")
+		return 2
+	}
+	t, err := registry.Get(args[0])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if err := launcher.RevealGit(t); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 func runStop(args []string) int {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: tooldock stop <id>")
@@ -237,6 +300,53 @@ func runUnregister(args []string) int {
 		return 1
 	}
 	applog.Info("cli_unregister", "id", args[0])
+	fmt.Println("trashed", args[0])
+	return 0
+}
+
+func runBlocked() int {
+	ents, err := registry.ListBlocked()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	if len(ents) == 0 {
+		fmt.Println("(empty)")
+		return 0
+	}
+	for _, e := range ents {
+		fmt.Printf("%s\t%s\n", e.ID, e.Name)
+	}
+	return 0
+}
+
+func runRestore(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: tooldock restore <id>")
+		return 2
+	}
+	if err := registry.Restore(args[0]); err != nil {
+		applog.Warn("cli_restore", "id", args[0], "err", err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	applog.Info("cli_restore", "id", args[0])
+	fmt.Println("restored", args[0])
+	return 0
+}
+
+func runUnblock(args []string) int {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: tooldock unblock <id>")
+		return 2
+	}
+	if err := registry.Unblock(args[0]); err != nil {
+		applog.Warn("cli_unblock", "id", args[0], "err", err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	applog.Info("cli_unblock", "id", args[0])
+	fmt.Println("unblocked", args[0])
 	return 0
 }
 
@@ -275,6 +385,9 @@ func runRegister(args []string) int {
 		}
 		applog.Info("cli_register", "id", t.ID, "file", *file)
 		fmt.Println("registered", t.ID)
+		if h := registry.ExtrasHint(t); h != "" {
+			fmt.Fprintln(os.Stderr, "提示:", h)
+		}
 		return 0
 	}
 	var plats []string
@@ -307,6 +420,9 @@ func runRegister(args []string) int {
 	}
 	applog.Info("cli_register", "id", t.ID, "name", t.Name)
 	fmt.Println("registered", t.ID)
+	if h := registry.ExtrasHint(t); h != "" {
+		fmt.Fprintln(os.Stderr, "提示:", h)
+	}
 	return 0
 }
 
@@ -342,6 +458,31 @@ func runInstallCLI() int {
 	}
 	applog.Info("install_cli", "path", path)
 	fmt.Println(path)
+	return 0
+}
+
+func runPack(args []string) int {
+	fs := flag.NewFlagSet("pack", flag.ContinueOnError)
+	out := fs.String("out", "dist", "输出目录")
+	fs.SetOutput(os.Stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	self, err := desktop.SelfPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	files, err := desktop.Pack(*out, self)
+	if err != nil {
+		applog.Error("pack", "err", err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("工坞 ToolDock %s\n", version.Display())
+	for _, f := range files {
+		fmt.Println(f)
+	}
 	return 0
 }
 

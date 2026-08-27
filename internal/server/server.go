@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 
 	"github.com/ts721521/DevToolbox/internal/applog"
 	"github.com/ts721521/DevToolbox/internal/desktop"
@@ -27,7 +26,13 @@ type Options struct {
 func Handler(static http.Handler, opt Options) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "name": "ToolDock", "display": "工坞"})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"name":    "ToolDock",
+			"display": "工坞",
+			"version": version.Display(),
+			"commit":  version.Commit,
+		})
 	})
 	mux.HandleFunc("GET /api/system", handleSystem)
 	mux.HandleFunc("GET /api/ai-handoff", handleAIHandoff)
@@ -43,12 +48,17 @@ func Handler(static http.Handler, opt Options) http.Handler {
 	mux.HandleFunc("POST /api/tools/move", handleToolsMove)
 	mux.HandleFunc("GET /api/tools/{id}", handleGet)
 	mux.HandleFunc("DELETE /api/tools/{id}", handleDelete)
+	mux.HandleFunc("POST /api/tools/{id}/restore", handleRestore)
+	mux.HandleFunc("GET /api/blocked", handleBlockedList)
+	mux.HandleFunc("DELETE /api/blocked/{id}", handleUnblock)
 	mux.HandleFunc("POST /api/tools/{id}/launch", handleLaunch)
 	mux.HandleFunc("POST /api/tools/{id}/stop", handleStop)
 	mux.HandleFunc("POST /api/tools/{id}/dir", handleRevealDir)
 	mux.HandleFunc("POST /api/tools/{id}/app", handleRevealApp)
+	mux.HandleFunc("POST /api/tools/{id}/git", handleRevealGit)
 	mux.HandleFunc("GET /api/logs", handleLogs)
 	mux.HandleFunc("POST /api/logs/open", handleLogsOpen)
+	mux.HandleFunc("POST /api/shutdown", handleShutdown)
 	for name, data := range opt.Guides {
 		n, d := name, data
 		mux.HandleFunc("GET /"+n, func(w http.ResponseWriter, _ *http.Request) {
@@ -59,7 +69,7 @@ func Handler(static http.Handler, opt Options) http.Handler {
 	if static != nil {
 		mux.Handle("/", static)
 	}
-	return withLog(mux)
+	return withLog(withOrigin(mux))
 }
 
 func AlreadyRunning() bool {
@@ -85,7 +95,10 @@ func handleSystem(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":            "ToolDock",
 		"display_name":    "工坞",
-		"version":         version.Version,
+		"version":         version.Display(),
+		"version_numeric": version.Numeric(),
+		"commit":          version.Commit,
+		"build_date":      version.Date,
 		"os":              runtime.GOOS,
 		"os_name":         registry.PlatformLabel(runtime.GOOS),
 		"arch":            runtime.GOARCH,
@@ -104,6 +117,7 @@ func handleSystem(w http.ResponseWriter, _ *http.Request) {
 		"log_dir":         logDir(),
 		"agents_md":       filepath.Join(root, "AGENTS.md"),
 		"how_to_register": "Write .devtoolbox.json then: tooldock register --file .devtoolbox.json",
+		"token":           CSRFToken,
 	})
 }
 
@@ -122,10 +136,12 @@ func handleList(w http.ResponseWriter, _ *http.Request) {
 		Compatible bool     `json:"compatible"`
 		PlatformUI []string `json:"platform_labels"`
 		CurrentOS  string   `json:"current_os"`
+		GitWeb     string   `json:"git_web,omitempty"`
+		GitLabel   string   `json:"git_label,omitempty"`
 	}
 	out := make([]item, 0, len(tools))
 	for _, t := range tools {
-		st := launcher.Probe(t)
+		st := launcher.Alive(t)
 		labels := make([]string, 0, len(t.Platforms))
 		for _, p := range t.Platforms {
 			labels = append(labels, registry.PlatformLabel(p))
@@ -138,6 +154,8 @@ func handleList(w http.ResponseWriter, _ *http.Request) {
 			Compatible: t.Supports(runtime.GOOS),
 			PlatformUI: labels,
 			CurrentOS:  registry.PlatformLabel(runtime.GOOS),
+			GitWeb:     registry.GitWebURL(t.Git),
+			GitLabel:   registry.GitLabel(t.Git),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -146,11 +164,7 @@ func handleList(w http.ResponseWriter, _ *http.Request) {
 func handleGet(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		status := http.StatusBadRequest
-		if errors.Is(err, registry.ErrNotFound) {
-			status = http.StatusNotFound
-		}
-		http.Error(w, err.Error(), status)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	writeJSON(w, http.StatusOK, t)
@@ -170,27 +184,31 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := registry.Save(one); err != nil {
 		applog.Error("register", "id", one.ID, "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	applog.Info("register", "id", one.ID, "name", one.Name, "kind", one.Kind, "workdir", one.Workdir)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": one.ID})
+	out := map[string]any{"ok": true, "id": one.ID}
+	if h := registry.ExtrasHint(one); h != "" {
+		out["hint"] = h
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func handleDelete(w http.ResponseWriter, r *http.Request) {
 	if err := registry.Remove(r.PathValue("id")); err != nil {
 		applog.Warn("unregister", "id", r.PathValue("id"), "err", err)
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	applog.Info("unregister", "id", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "trashed": true})
 }
 
 func handleLaunch(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	if err := launcher.Launch(t); err != nil {
@@ -205,7 +223,7 @@ func handleLaunch(w http.ResponseWriter, r *http.Request) {
 func handleStop(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	if err := launcher.Stop(t); err != nil {
@@ -214,13 +232,13 @@ func handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applog.Info("stop", "id", t.ID, "name", t.Name)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": t.ID, "running": launcher.Probe(t).Running})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": t.ID, "running": launcher.Alive(t).Running})
 }
 
 func handleRevealDir(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	if err := launcher.RevealDir(t); err != nil {
@@ -234,7 +252,7 @@ func handleRevealDir(w http.ResponseWriter, r *http.Request) {
 func handleRevealApp(w http.ResponseWriter, r *http.Request) {
 	t, err := registry.Get(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		http.Error(w, err.Error(), httpStatus(err))
 		return
 	}
 	if err := launcher.RevealProgram(t); err != nil {
@@ -245,10 +263,37 @@ func handleRevealApp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": t.ID, "kind": "app"})
 }
 
+func handleRevealGit(w http.ResponseWriter, r *http.Request) {
+	t, err := registry.Get(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, err.Error(), httpStatus(err))
+		return
+	}
+	if err := launcher.RevealGit(t); err != nil {
+		applog.Warn("reveal_git", "id", t.ID, "err", err)
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": t.ID, "kind": "git", "url": registry.GitWebURL(t.Git)})
+}
+
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func httpStatus(err error) int {
+	if errors.Is(err, registry.ErrNotFound) {
+		return http.StatusNotFound
+	}
+	if errors.Is(err, registry.ErrBlocked) {
+		return http.StatusConflict
+	}
+	if errors.Is(err, registry.ErrInvalid) {
+		return http.StatusBadRequest
+	}
+	return http.StatusBadRequest
 }
 
 func URL() string {
@@ -263,9 +308,4 @@ func logPath() string {
 func logDir() string {
 	d, _ := applog.Dir()
 	return d
-}
-
-func IsLocal(r *http.Request) bool {
-	host := r.RemoteAddr
-	return strings.HasPrefix(host, "127.0.0.1") || strings.HasPrefix(host, "[::1]")
 }
