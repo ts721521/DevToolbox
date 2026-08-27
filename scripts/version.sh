@@ -20,9 +20,10 @@ else
 fi
 COMMIT=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Darwin: do not pass -s. It can strip LC_UUID and dyld aborts the binary (Abort trap 6).
+# Darwin: -s can drop LC_UUID; Go 1.22 also needs -B gobuildid or dyld on
+# macOS 26 aborts with "missing LC_UUID load command".
 _goos="${GOOS:-$(go env GOOS 2>/dev/null || true)}"
 _strip="-s -w"
-[ "$_goos" = darwin ] && _strip="-w"
+[ "$_goos" = darwin ] && _strip="-w -B gobuildid"
 LDFLAGS="${_strip} -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
 export VERSION COMMIT DATE LDFLAGS PKG ROOT
