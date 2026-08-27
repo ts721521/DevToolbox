@@ -62,15 +62,17 @@ static void openUI(void) {
 		return;
 	}
 	last = now;
-	NSArray<NSString *> *apps = @[ @"Google Chrome", @"Microsoft Edge" ];
-	for (NSString *app in apps) {
-		NSString *path = [NSString stringWithFormat:@"/Applications/%@.app", app];
-		if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+	NSArray<NSString *> *bins = @[
+		@"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		@"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+	];
+	for (NSString *bin in bins) {
+		if (![[NSFileManager defaultManager] isExecutableFileAtPath:bin]) {
 			continue;
 		}
 		NSTask *task = [[NSTask alloc] init];
-		task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/open"];
-		task.arguments = @[ @"-a", app, @"--args", @"--app=http://127.0.0.1:17890", @"--window-size=1080,760" ];
+		task.executableURL = [NSURL fileURLWithPath:bin];
+		task.arguments = @[ @"--app=http://127.0.0.1:17890", @"--window-size=1080,760" ];
 		if ([task launchAndReturnError:nil]) {
 			return;
 		}

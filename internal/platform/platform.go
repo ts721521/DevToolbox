@@ -104,14 +104,6 @@ func OpenInChromeApp(raw string) error {
 	if chrome == "" {
 		return OpenURL(raw)
 	}
-	if runtime.GOOS == "darwin" {
-		app := "Google Chrome"
-		if strings.Contains(chrome, "Microsoft Edge") {
-			app = "Microsoft Edge"
-		}
-		cmd := exec.Command("open", "-a", app, "--args", "--app="+raw, "--window-size=1080,760")
-		return cmd.Start()
-	}
 	cmd := exec.Command(chrome, "--app="+raw, "--window-size=1080,760")
 	return cmd.Start()
 }
