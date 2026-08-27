@@ -52,7 +52,7 @@ jobs:
           fi
           ls -lh dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tooldock-${{ matrix.goos }}-${{ matrix.goarch }}-${{ github.ref_name }}
           path: dist/*
@@ -74,7 +74,7 @@ jobs:
           ./tooldock pack --out dist
           rm -rf dist/*.app
           ls -lh dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ToolDock-${{ github.ref_name }}-macOS-app
           path: dist/*.zip
