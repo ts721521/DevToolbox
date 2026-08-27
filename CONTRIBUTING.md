@@ -35,8 +35,9 @@ go test ./...
 
 1. 从最新 `main` 切分支：`feat/短描述` / `fix/短描述` / `docs/短描述`
 2. 小步提交，信息遵循 Conventional Commits（可用中文 subject）
-3. 推送并开 PR，等待 CI 通过后合并
-4. **不要**直接在 `main` 上开发
+3. 推送并开 PR
+4. 用户同意后由 AI 执行 `gh pr merge --squash|--rebase --auto`（CI 绿后自动合入）
+5. **不要**直接在 `main` 上开发或 push
 
 ## 反馈
 

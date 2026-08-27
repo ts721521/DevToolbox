@@ -75,3 +75,18 @@ jobs:
       - uses: wagoid/commitlint-github-action@v6
         with:
           configFile: .commitlintrc.yml
+
+  ci:
+    name: CI
+    needs: [build, lint, commitlint]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 全部检查通过
+        run: |
+          test "${{ needs.build.result }}" = "success"
+          test "${{ needs.lint.result }}" = "success"
+          case "${{ needs.commitlint.result }}" in
+            success|skipped) ;;
+            *) exit 1 ;;
+          esac

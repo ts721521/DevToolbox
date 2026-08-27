@@ -17,3 +17,5 @@
 
 ## 关联 Issue
 <!-- Closes # -->
+
+<!-- 用户在对话里同意后，由 AI 执行 gh pr merge --squash|--rebase --auto，无需在网页点 Merge。 -->
